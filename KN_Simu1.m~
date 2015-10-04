@@ -1,7 +1,6 @@
 clc; 
 clearvars; 
 rng('shuffle'); 
-%clf; close all;
 T         = 365; 
 nvip      = 99; 
 route_min = 1; 
@@ -19,15 +18,17 @@ vip_route = datasample(route_min:route_max, nvip)';
 % 6.  serq_num: number of service quality predictors 
 % 7.  Parameters (gamma, lambda, delta, beta, mu, phi, nu, a, b, zeta,
 %         kappa, gamma_mu etc.) are explained in the next section
-% 8.  prior_matrix: 
-% 9.  post_matrix: the same format as above just restore the posterior
+% 8.  prior_mat:1-max_route, mu_r; max_route+1: zeta (level 2, high); 
+%         max_route+2, kappa (level 2); max_route+3, phi_a; max_route+4, phi_b; 
+%         max_route+5, mu_phi (level 1, low)
+% 9.  Exp_mat: the same format as above just restore the posterior
 %         status of parameters in the Bayesian model
-% 10. ID_matrix: 1, Vip ID; 2, Period (1 to T, the same for everyone); 
+% 10. ID_mat: 1, Vip ID; 2, Period (1 to T, the same for everyone); 
 %         3, Choice (shipped or not) 
-% 11. data_predictor: 1, vip id; 2, vip route num; 3, experience of vip 
+% 11. pred_mat: 1, vip id; 2, vip route num; 3, experience of vip 
 %         chosen route for time t; 4, price for the choice; etc (other 
 %         predictors); 5, post_matrix service 
-% 12. Utl_matrix: utility matrix 1. V; 2, EV; 3, EV/(1+EV);
+% 12. U_mat: utility matrix 1. V; 2, EV; 3, EV/(1+EV);
 %         4, lambda*EV/(1+EV)
 
 %% Parameter and Model Specification
@@ -83,16 +84,11 @@ beta        = normrnd(repmat(beta_mu', nvip, 1), ...
 % NOTE 1: should scall all X var to have mean 0 and std 1
 % Note 2: check rcond: <1e-16 is a sig problem: drop or combine var
 prior_mat   = KN_Prior(vip_route, 0);
-post_mat    = prior_mat;
+% Exp_ma is the
+Exp_mat    = prior_mat;
 
-ID_mat      = zeros(nvip*T, 3);
-ID_mat(:,1) = kron((1: nvip)', ones(T, 1));
-ID_mat(:,2) = repmat((1: T)', nvip, 1);
-
-pred_mat    = KN_Predictor(vip_route, T, post_mat);
-
+ID_mat      = KN_ID(vip_route, T, Exp_mat);
 U_mat       = zeros(nvip, 4);
-
 T_index     = (0: T: T*(nvip-1))';
 
 %% predictors updates by period
@@ -101,21 +97,21 @@ for i = 1:T
     U_mat(:, 1) = KN_IndUtility(T_index, ...
                                 gamma, ...
                                 beta, ...
-                                pred_mat);
+                                ID_mat);
     U_mat(:, 2) = exp(U_mat(:, 1));
     U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
     U_mat(:, 4) = lambda .* U_mat(:, 3);
     ID_mat(T_index, 3) = binornd(1, U_mat(:, 4));
-    prior_mat   = post_mat;
-    [post_mat]  = KN_BUpdate(T_index, ...
+    ID_mat(T_index, 4) = ID_mat(T_index, 3);
+    [Exp_mat]  = KN_BUpdate(T_index, ...
                              ID_mat,...
-                             pred_mat, ...
+                             ID_mat, ...
                              prior_mat, ...
                              route_max);
-    pred_mat(:, T_index+1, 5) = post_mat(...
-                                    sub2ind(size(post_mat), ...
-                                            (1: 1: nvip)',...
-                                             pred_mat(:, T_index+1, 2)));
+    ID_mat(:, T_index+1, 5) = ...
+        Exp_mat(sub2ind(size(Exp_mat), ...
+                         (1: 1: nvip)',...
+                          ID_mat(:, T_index+1, 2)));
 end
 clear i;
 save data.mat; 
