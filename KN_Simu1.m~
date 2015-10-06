@@ -21,14 +21,12 @@ vip_route = datasample(route_min:route_max, nvip)';
 % 8.  prior_mat:1-max_route, mu_r; max_route+1: zeta (level 2, high); 
 %         max_route+2, kappa (level 2); max_route+3, phi_a; max_route+4, phi_b; 
 %         max_route+5, mu_phi (level 1, low)
-% 9.  Exp_mat: the same format as above just restore the posterior
-%         status of parameters in the Bayesian model
+% 9.  Exp_mat: this is the expectation matrix, including statistics to be
+%         used in the indirect utility function. The content of this matrix
+%         can be changed according to model specification. 
 % 10. ID_mat: 1, Vip ID; 2, Period (1 to T, the same for everyone); 
 %         3, Choice (shipped or not) 
-% 11. pred_mat: 1, vip id; 2, vip route num; 3, experience of vip 
-%         chosen route for time t; 4, price for the choice; etc (other 
-%         predictors); 5, post_matrix service 
-% 12. U_mat: utility matrix 1. V; 2, EV; 3, EV/(1+EV);
+% 11. U_mat: utility matrix 1. V; 2, EV; 3, EV/(1+EV);
 %         4, lambda*EV/(1+EV)
 
 %% Parameter and Model Specification
@@ -84,15 +82,16 @@ beta        = normrnd(repmat(beta_mu', nvip, 1), ...
 % NOTE 1: should scall all X var to have mean 0 and std 1
 % Note 2: check rcond: <1e-16 is a sig problem: drop or combine var
 prior_mat   = KN_Prior(vip_route, 0);
-% Exp_ma is the
-Exp_mat    = prior_mat;
-
-ID_mat      = KN_ID(vip_route, T, Exp_mat);
+% Exp_ma is the expectation matrix used into utitlity function for decision
+% making
+Exp_mat     = KN_Exp(prior_mat);
+ID_mat      = KN_ID(vip_route, T);
 U_mat       = zeros(nvip, 4);
 T_index     = (0: T: T*(nvip-1))';
 
 %% predictors updates by period
 for i = 1:T
+    % Make decision based on current info
     T_index     = T_index + 1; 
     U_mat(:, 1) = KN_IndUtility(T_index, ...
                                 gamma, ...
@@ -101,17 +100,18 @@ for i = 1:T
     U_mat(:, 2) = exp(U_mat(:, 1));
     U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
     U_mat(:, 4) = lambda .* U_mat(:, 3);
-    ID_mat(T_index, 3) = binornd(1, U_mat(:, 4));
-    ID_mat(T_index, 4) = ID_mat(T_index, 3);
-    [Exp_mat]  = KN_BUpdate(T_index, ...
+    ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));
+    
+    % Update believes after real experiences
+    Exp_mat     = KN_BUpdate(T_index, ...
                              ID_mat,...
                              ID_mat, ...
                              prior_mat, ...
                              route_max);
-    ID_mat(:, T_index+1, 5) = ...
+    ID_mat(T_index+1, 6) = ...
         Exp_mat(sub2ind(size(Exp_mat), ...
-                         (1: 1: nvip)',...
-                          ID_mat(:, T_index+1, 2)));
+                       (1: 1: nvip)',...
+                        ID_mat(T_index+1, 3)));
 end
 clear i;
 save data.mat; 
