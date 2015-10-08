@@ -103,7 +103,7 @@ for i = 1:T
     
     % Update believes after real experiences
     Exp_mat     = ...
-        KN_BUpdate(T_index, ID_mat, prior_mat);
+        KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat);
     
     % Updatevhuviivnfgciufduictnkbhtfgbcvevc believes for the next period
     ID_mat(T_index+1, 6) = ...
