@@ -20,12 +20,16 @@ vip_route = datasample(route_min:route_max, nvip)';
 %         kappa, gamma_mu etc.) are explained in the next section
 % 8.  prior_mat:1-max_route, mu_r; max_route+1: zeta (level 2, high); 
 %         max_route+2, kappa (level 2); max_route+3, phi_a; max_route+4, phi_b; 
-%         max_route+5, mu_phi (level 1, low)
+%         max_route+5, nu_phi (level 1, low);
+%         max_route+6: mu_beta=0; max_route+7: phi_beta. 
 % 9.  Exp_mat: this is the expectation matrix, including statistics to be
 %         used in the indirect utility function. The content of this matrix
-%         can be changed according to model specification. 
+%         can be changed according to model specification (which metrics to 
+%         be used in the indirect utility function, only mean or mean+var or 
+%         mean+sd etc. 
 % 10. ID_mat: 1, Vip ID; 2, Period (1 to T, the same for everyone); 
-%         3, Choice (shipped or not) 
+%         3, route index; 4, price; 5, real experience; 6, expected 
+%         experience; 7, shipped or not  
 % 11. U_mat: utility matrix 1. V; 2, EV; 3, EV/(1+EV);
 %         4, lambda*EV/(1+EV)
 
@@ -46,7 +50,7 @@ vip_route = datasample(route_min:route_max, nvip)';
 % 1. When t=1:
 %     1.1 Let E(service quality) = mu
 %     1.2 Arrival rate AR= lambda * e(U)/(1+e(U)), where
-%         U=beta_1*pred_1+beta_2*E(service quality)
+%         U = beta_1*pred_1+beta_2*E(service quality)
 %     1.3 Calcuate the arrival gap for each customer, gap~exp(AR)
 %     1.4 Update the arrival matrix
 % 2. When t>1: 
@@ -84,30 +88,26 @@ beta        = normrnd(repmat(beta_mu', nvip, 1), ...
 prior_mat   = KN_Prior(vip_route, 0);
 % Exp_ma is the expectation matrix used into utitlity function for decision
 % making
-Exp_mat     = KN_Exp(prior_mat);
+Exp_mat     = KN_Exp(prior_mat, 0);
 ID_mat      = KN_ID(vip_route, T);
 U_mat       = zeros(nvip, 4);
 T_index     = (0: T: T*(nvip-1))';
 
 %% predictors updates by period
-for i = 1:T
+for t = 1:T
     % Make decision based on current info
     T_index     = T_index + 1; 
-    U_mat(:, 1) = KN_IndUtility(T_index, ...
-                                gamma, ...
-                                beta, ...
-                                ID_mat);
+    U_mat(:, 1) = ...
+        KN_IndUtility(T_index, gamma, beta, ID_mat);
     U_mat(:, 2) = exp(U_mat(:, 1));
     U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
     U_mat(:, 4) = lambda .* U_mat(:, 3);
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));
     
     % Update believes after real experiences
-    Exp_mat     = KN_BUpdate(T_index, ...
-                             ID_mat,...
-                             ID_mat, ...
-                             prior_mat, ...
-                             route_max);
+    Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route);
+    
+    % Updatevhuviivnfgciufduictnkbhtfgbcvevc believes for the next period
     ID_mat(T_index+1, 6) = ...
         Exp_mat(sub2ind(size(Exp_mat), ...
                        (1: 1: nvip)',...
