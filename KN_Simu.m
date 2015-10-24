@@ -105,7 +105,12 @@ for t = 1:T
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));
     
     % Update believes after real experiences
+<<<<<<< HEAD:KN_Simu.m
     Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route);
+=======
+    Exp_mat     = ...
+        KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat);
+>>>>>>> 583e2e3e23b6f089c3245f838428846cd603a7a2:KN_Simu1.m
     
     % Updatevhuviivnfgciufduictnkbhtfgbcvevc believes for the next period
     ID_mat(T_index+1, 6) = ...
