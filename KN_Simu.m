@@ -21,16 +21,14 @@ vip_route = datasample(route_min:route_max, nvip)';
 % 6.  serq_num: number of service quality predictors 
 % 7.  Parameters (gamma, lambda, delta, beta, mu, phi, nu, a, b, zeta,
 %         kappa, gamma_mu etc.) are explained in the next section
-% 8.  prior_mat:1-max_route, mu_r; max_route+1: zeta (level 2, high); 
-%         max_route+2, kappa (level 2); max_route+3, phi_a; max_route+4, phi_b; 
-%         max_route+5, nu_phi (level 1, low);
-%         max_route+6: mu_beta=0; max_route+7: phi_beta. 
+% 8.  prior_mat:1: zeta (level 2, high); 2, kappa (level 2); 3, phi_a; 
+%         4, phi_b; 5, nu_phi (level 1, low); 6: mu_beta=0; 7: phi_beta. 
 % 9.  Exp_mat: this is the expectation matrix, including statistics to be
 %         used in the indirect utility function. The content of this matrix
 %         can be changed according to model specification (which metrics to 
 %         be used in the indirect utility function, only mean or mean+var or 
 %         mean+sd etc. 
-% 10. ID_mat: 1, Vip ID; 2, Period (1 to T, the same for everyone); 
+% 10. ID_mat: 1, vip id; 2, period (1 to T, the same for everyone); 
 %         3, route index; 4, price; 5, real experience; 6, expected 
 %         experience; 7, shipped or not  
 % 11. U_mat: utility matrix 1. V; 2, EV; 3, EV/(1+EV);
@@ -88,13 +86,13 @@ beta_sigma  = [0.25; 0.2];
 beta        = normrnd(repmat(beta_mu', nvip, 1), ...
                       repmat(beta_sigma', nvip, 1), ...
                       [nvip, pred_num+serq_num]); 
-
+n_continuous = 0;
 % NOTE 1: should scall all X var to have mean 0 and std 1
 % Note 2: check rcond: <1e-16 is a sig problem: drop or combine var
-prior_mat   = KN_Prior(vip_route, 0);
+prior_mat   = KN_Prior(n_continuous, nvip);
 % Exp_mat is the expectation matrix used into utitlity function for decision
 % making
-Exp_mat     = KN_Exp(prior_mat, 0);
+Exp_mat     = KN_Exp(prior_mat, n_continuous, route_max);
 ID_mat      = KN_ID(vip_route, T);
 U_mat       = zeros(nvip, 4);
 T_index     = (0: T: T*(nvip-1))';
@@ -111,13 +109,13 @@ for t = 1:T
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));
     
     % Update believes after real experiences
-    Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route);
-    Exp_mat     = ...
-        KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat);    
+    Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
+    if t<T
     ID_mat(T_index+1, 6) = ...
         Exp_mat(sub2ind(size(Exp_mat), ...
                        (1: 1: nvip)',...
                         ID_mat(T_index+1, 3)));
+    end
 end
 clear i;
 save data.mat; 
