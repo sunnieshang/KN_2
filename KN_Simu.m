@@ -6,7 +6,10 @@ nvip      = 99;
 route_min = 1; 
 route_max = 10;
 vip_route = datasample(route_min:route_max, nvip)';
-
+%% NOTE from Andres
+% Look at the data and find the customers having more than 1 route demand
+% in one period. Another option: a predefined number of shipments in every
+% period, which is customer specific.
 %%  Meaning                 
 % 1.  T: # of time windows in the year 2013
 % 2.  nvip: # of shipping customers 
@@ -34,7 +37,7 @@ vip_route = datasample(route_min:route_max, nvip)';
 %         4, lambda*EV/(1+EV)
 
 %% Parameter and Model Specification
-% U = gamma + beta*data_predictor
+% EU = gamma + beta*data_predictor
 % gamma ~ N(gamma_mu, gamma_sigma)
 % lambda = exp(delta)/(1+exp(delta))----->delta ~ N(delta_mu, delta_sigma)
 % Note: lambda is the arrival rate. The arrival rate should be less than 1
@@ -43,8 +46,11 @@ vip_route = datasample(route_min:route_max, nvip)';
 % beta  ~ N(beta_mu, beta_sigma)
 % Indirect Utiltiy = beta_1*pred_1 + 
 %     beta_2*E(service_quality|route r, customer i)
-% service quality: log((actual-planned)/planned shipping duration) 
-%     ~ N(mu, phi), where mu ~ N(nu, xi), phi ~ G(a, b), nu ~ N(zeta, kappa)
+% service quality: y=log((actual-planned)/planned shipping duration) 
+%     ~ N(categ_pred+alpha*conti_pred, phi), mu_ir is one of the
+%     categorical predictor
+% where mu_ir ~ N(nu_i, nu_phi), phi ~ G(a, b), nu_i ~ N(zeta, kappa)
+% nu_i is the hyperparameter
 
 %% Bayesian parameter update flow
 % 1. When t=1:
@@ -86,7 +92,7 @@ beta        = normrnd(repmat(beta_mu', nvip, 1), ...
 % NOTE 1: should scall all X var to have mean 0 and std 1
 % Note 2: check rcond: <1e-16 is a sig problem: drop or combine var
 prior_mat   = KN_Prior(vip_route, 0);
-% Exp_ma is the expectation matrix used into utitlity function for decision
+% Exp_mat is the expectation matrix used into utitlity function for decision
 % making
 Exp_mat     = KN_Exp(prior_mat, 0);
 ID_mat      = KN_ID(vip_route, T);
@@ -105,14 +111,9 @@ for t = 1:T
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));
     
     % Update believes after real experiences
-<<<<<<< HEAD:KN_Simu.m
     Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route);
-=======
     Exp_mat     = ...
-        KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat);
->>>>>>> 583e2e3e23b6f089c3245f838428846cd603a7a2:KN_Simu1.m
-    
-    % Updatevhuviivnfgciufduictnkbhtfgbcvevc believes for the next period
+        KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat);    
     ID_mat(T_index+1, 6) = ...
         Exp_mat(sub2ind(size(Exp_mat), ...
                        (1: 1: nvip)',...
@@ -120,4 +121,5 @@ for t = 1:T
 end
 clear i;
 save data.mat; 
+
 
