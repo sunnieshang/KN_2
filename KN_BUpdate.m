@@ -1,7 +1,7 @@
 function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
 % Note from Andres: need to make sure the samplers are converged
 %% Parameter initialization
-    T_update = T_index(ID_mat(T_index, 7)==1); %refer to line 29 in KN_simu.m
+    T_update = T_index(ID_mat(T_index, 7)==1);
     ID = ID_mat(T_update, 1); 
     iter = 1000; 
     burnin = 500; 
@@ -15,11 +15,11 @@ function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
         phi_a = prior_mat(ID(i), 3);
         phi_b = prior_mat(ID(i), 4);
         nu_phi = prior_mat(ID(i), 5);
-        beta_mu = prior_mat(ID(i), 6);
-        beta_phi = prior_mat(ID(i), 7);
+        alpha_mu = prior_mat(ID(i), 6);
+        alpha_phi = prior_mat(ID(i), 7);
         y = ID_mat(ID_mat(:,1)==ID(i) & ID_mat(:,7)==1, 5);
         categ_mat = ID_mat(ID_mat(:,1)==ID(i) & ID_mat(:,7)==1, 3);
-        conti_mat = zeros(size(categ_mat,1),0);
+        conti_mat = zeros(size(categ_mat,1), 0);
         n_category = size(categ_mat, 2);
         n_continuous = size(conti_mat, 2);
         % ID_mat: 3, route index; 4, price, 5, real experience, 7, ship or not
@@ -82,9 +82,9 @@ function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
             % Update beta, coefficients of continuous predictors
             for k = 1: n_continuous
                 alpha = alpha + conti_mat(:, k).*mu(t-1, sum(levels_in_category)+k) ;
-                post_phi = f_post_xi(conti_mat(:,k)'*conti_mat(:,k), beta_phi, phi(t));
+                post_phi = f_post_xi(conti_mat(:,k)'*conti_mat(:,k), alpha_phi, phi(t));
                 mid_conti = sum(alpha, 1);
-                post_mu = f_post_nu(post_phi, beta_phi, phi(t-1), mid_conti, beta_mu);
+                post_mu = f_post_nu(post_phi, alpha_phi, phi(t-1), mid_conti, alpha_mu);
                 mu(t, sum(levels_in_category)+k) = normrnd(post_mu, 1./sqrt(post_phi));
                 alpha = alpha - conti_mat(:, k).*mu(t, sum(levels_in_category)+k);
             end
@@ -96,7 +96,6 @@ function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
         %% post Gibbs sampling selection
         Exp_mat(ID(i), [1:sum(levels_in_category),route_max+1:end-1]) = mean(mu(burnin:iter, :), 1);
         Exp_mat(ID(i), end) = mean(phi(burnin:iter, :), 1);
-
     end
 end
 

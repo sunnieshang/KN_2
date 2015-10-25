@@ -1,9 +1,6 @@
 function [ID_mat] = KN_ID(vip_route, T)
-% 1, vip id; 2, vip route ID; 3, real experience of vip chosen route 
-% for time t; 4, price for the choice; etc (other predictors); 
-% 5, post_matrix service quality predictor
-    nvip         = size(vip_route, 1); 
-    ID_mat       = zeros(nvip*T, 7);
+    nvip = size(vip_route, 1); 
+    ID_mat = zeros(nvip*T, 7);
     ID_mat(:, 1) = kron((1: nvip)', ones(T, 1));
     ID_mat(:, 2) = repmat((1: T)', nvip, 1);
     for i=1:nvip

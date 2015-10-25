@@ -22,7 +22,7 @@ vip_route = datasample(route_min:route_max, nvip)';
 % 7.  Parameters (gamma, lambda, delta, beta, mu, phi, nu, a, b, zeta,
 %         kappa, gamma_mu etc.) are explained in the next section
 % 8.  prior_mat:1: zeta (level 2, high); 2, kappa (level 2); 3, phi_a; 
-%         4, phi_b; 5, nu_phi (level 1, low); 6: mu_beta=0; 7: phi_beta. 
+%         4, phi_b; 5, nu_phi (level 1, low); 6: alpha_mu=0; 7: alpha_phi. 
 % 9.  Exp_mat: this is the expectation matrix, including statistics to be
 %         used in the indirect utility function. The content of this matrix
 %         can be changed according to model specification (which metrics to 
@@ -44,17 +44,19 @@ vip_route = datasample(route_min:route_max, nvip)';
 % beta  ~ N(beta_mu, beta_sigma)
 % Indirect Utiltiy = beta_1*pred_1 + 
 %     beta_2*E(service_quality|route r, customer i)
-% service quality: y=log((actual-planned)/planned shipping duration) 
+% service quality: y=(actual-planned)/planned shipping duration
 %     ~ N(categ_pred+alpha*conti_pred, phi), mu_ir is one of the
-%     categorical predictor
+%     categorical predictor (currently only consider one categorial
+%     predictor)
 % where mu_ir ~ N(nu_i, nu_phi), phi ~ G(a, b), nu_i ~ N(zeta, kappa)
-% nu_i is the hyperparameter
+% nu_i is the hyperparameter, alpha ~ N(alpha_mu, alpha_phi)
 
 %% Bayesian parameter update flow
 % 1. When t=1:
-%     1.1 Let E(service quality) = mu
+%     1.1 Let E(service quality) = Exp_mat
 %     1.2 Arrival rate AR= lambda * e(U)/(1+e(U)), where
 %         U = beta_1*pred_1+beta_2*E(service quality)
+% TODO: 1.3 is not realized yet, need to discuss with Andres about it
 %     1.3 Calcuate the arrival gap for each customer, gap~exp(AR)
 %     1.4 Update the arrival matrix
 % 2. When t>1: 
@@ -106,15 +108,12 @@ for t = 1:T
     U_mat(:, 2) = exp(U_mat(:, 1));
     U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
     U_mat(:, 4) = lambda .* U_mat(:, 3);
-    ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));
-    
+    ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));   
     % Update believes after real experiences
     Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
     if t<T
-    ID_mat(T_index+1, 6) = ...
-        Exp_mat(sub2ind(size(Exp_mat), ...
-                       (1: 1: nvip)',...
-                        ID_mat(T_index+1, 3)));
+        ID_mat(T_index+1, 6) = Exp_mat(...
+            sub2ind(size(Exp_mat), (1: 1: nvip)', ID_mat(T_index+1, 3)));
     end
 end
 clear i;
