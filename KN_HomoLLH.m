@@ -4,7 +4,7 @@ function [LLH, grad] = KN_HomoLLH(param, ...
                                   pred_num,...
                                   serq_num,...
                                   n_continuous,...
-                                  route_max)
+                                  vip_route)
 %% minimize "-loglikelihood(LLH)" and recover parameters
 %   Use user supplied gradient
 %   LLH = sum_1^N (V_j - log(sum exp(V_j)))
@@ -12,15 +12,16 @@ function [LLH, grad] = KN_HomoLLH(param, ...
     gamma   = param(pred_num + serq_num + 1); 
     delta   = param(end); 
     lambda  = exp(delta) / (1 + exp(delta));
+    route_max = max(vip_route);
     Exp_mat = KN_Exp(prior_mat, n_continuous, route_max);
     nvip    = size(Exp_mat, 1); 
     T       = size(ID_mat, 1) / nvip;
     V       = zeros(nvip * T, 4); 
     T_index = (0: T: T * (nvip - 1))';
     % predictors updates by period
-    for i = 1: T 
+    for t = 1: T 
         T_index = T_index + 1;
-        V(T_index, 1) = KN_IndUtility(T_index, gamma, beta, ID_mat);
+        V(T_index, 1) = KN_IndUtility(T_index, gamma, repmat(beta, nvip, 1), ID_mat);
         V(T_index, 2) = exp(V(T_index, 1));
         V(T_index, 3) = V(T_index, 2) ./ (V(T_index, 2) + 1);
         V(T_index, 4) = lambda .* V(T_index, 3);
@@ -33,13 +34,13 @@ function [LLH, grad] = KN_HomoLLH(param, ...
     LLH = -sum(ID_mat(:, 7) .* log(V(:, 4)) + (1 - ID_mat(:, 7)) .* log(1 - V(:, 4)));
     
     %% Evaluate the gradient
-    if nargout>1
+    if nargout > 1
         grad = zeros(pred_num + serq_num + 2, 1);
         % beta
-        for i = 1: pred_num
-            grad(i) = -sum((ID_mat(:, 7) ./ V(:, 4) - ...
+        for t = 1: pred_num
+            grad(t) = -sum((ID_mat(:, 7) ./ V(:, 4) - ...
                 (1 - ID_mat(:, 7)) ./ (1 - V(:, 4)))...
-                .* lambda .* V(:, 3) .* (1 - V(:, 3)) .* Exp_mat(:, i+3));
+                .* lambda .* V(:, 3) .* (1 - V(:, 3)) .* Exp_mat(:, t+3));
         end
         grad(pred_num + 1) = -sum((ID_mat(:, 3) ./ V(:, 4) - ...
             (1 - ID_mat(:, 3)) ./ (1 - V(:, 4))) .* lambda .* V(:, 3)...

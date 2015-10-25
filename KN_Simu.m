@@ -6,7 +6,7 @@ route_max = 10;
 pred_num = 1; 
 serq_num = 1; % service quality predictor 
 n_continuous = 0;
-vip_route = datasample(route_min:route_max, nvip)';
+vip_route = datasample(route_min: route_max, nvip)';
 %% NOTE from Andres
 % Look at the data and find the customers having more than 1 route demand
 % in one period. Another option: a predefined number of shipments in every
@@ -77,13 +77,13 @@ delta_sigma = 0.1;
 delta       = normrnd(repmat(delta_mu', nvip, 1), ...
                       delta_sigma, ...
                       [nvip, 1]);
-lambda      = exp(delta)./(1+exp(delta));
+lambda      = exp(delta) ./ (1 + exp(delta));
 
 beta_mu     = [-1; 1.2]; 
 beta_sigma  = [0.25; 0.2];
 beta        = normrnd(repmat(beta_mu', nvip, 1), ...
                       repmat(beta_sigma', nvip, 1), ...
-                      [nvip, pred_num+serq_num]); 
+                      [nvip, pred_num + serq_num]); 
 
 % NOTE 1: should scall all X var to have mean 0 and std 1
 % Note 2: check rcond: <1e-16 is a sig problem: drop or combine var

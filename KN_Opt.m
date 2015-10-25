@@ -10,7 +10,7 @@ f_fixed = @(x)KN_HomoLLH(x,...
                          pred_num,...
                          serq_num,...
                          n_continuous,...
-                         route_max);
+                         vip_route);
 % if check derivative, use "central finite difference", more accurate than
 % the default forward finite deifference". 
 ops_fixed = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
@@ -20,7 +20,7 @@ ops_fixed = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
 [par_fixed, fval_fixed, exitflag_fixed, output, grad] = ...
     fminunc(f_fixed, fixed0, ops_fixed);
 fixed_beta  = par_fixed(1: pred_num + serq_num);
-fixed_gamma = par_fixed(pred_num + serq_num+1); 
+fixed_gamma = par_fixed(pred_num + serq_num + 1); 
 fixed_delta = par_fixed(end);
 figure(1); 
 scatter(beta_mu, fixed_beta);
@@ -30,7 +30,7 @@ scatter([gamma_mu, delta_mu], [fixed_gamma, fixed_delta]);
 %% Create draws to be used in estimation
 % let's follow STATA in using 50 Halton draws per consumer for primes 2 and 3, dropping the first 15 (burn) 
 ndraws = 50;
-haltondraws = haltonset(2*choice_max+pred_num, 'Skip', 15);
+haltondraws = haltonset(2 * choice_max + pred_num, 'Skip', 15);
 haltondraws = scramble(haltondraws, 'RR2'); 
 draws = zeros(vip, 2 * choice_max + pred_num, ndraws);
 for i=1: 2 * choice_max+pred_num
@@ -38,15 +38,14 @@ for i=1: 2 * choice_max+pred_num
          vip, ndraws);
 end
 
-%% Recover random coefficient
+%% Recover/Estimate random coefficient
 nrandom = nfixed + 1 + pred_num + 1; % plus STD: 1 for gamma; k for beta
-random0 = [par_fixed; 0.5*ones(2+pred_num,1)];
-f_random = @(x)KN_HeteLLH(x, matrix,pred_num,choice_max,draws);
+random0 = [par_fixed; 0.5 * ones(2 + pred_num, 1)];
+f_random = @(x)KN_HeteLLH(x, matrix, pred_num, choice_max, draws);
 ops_random = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
         'DerivativeCheck', 'off', 'GradObj', 'on', 'HessUpdate', 'bfgs',...
-        'Display', 'iter', 'TolX', 1e-9,...
-        'TolFun', 1e-9, 'MaxIter', 500, 'MaxFunEvals', 1e10,...
-        'FinDiffType', 'central');
+        'Display', 'iter', 'TolX', 1e-9,'TolFun', 1e-9, 'MaxIter', 500,...
+        'MaxFunEvals', 1e10, 'FinDiffType', 'central');
 [par_random, fval_random, exitflag_random, output_random, grad_random, hess_random]...
     = fminunc(f_random, random0, ops_random);
 SE = sqrt(diag(inv(hess_random)));
