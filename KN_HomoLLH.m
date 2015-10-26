@@ -19,14 +19,14 @@ function [LLH, grad] = KN_HomoLLH(param, ...
     V       = zeros(nvip * T, 4); 
     T_index = (0: T: T * (nvip - 1))';
     % predictors updates by period
-    for t = 1: T 
+    for i = 1: T 
         T_index = T_index + 1;
         V(T_index, 1) = KN_IndUtility(T_index, gamma, repmat(beta, nvip, 1), ID_mat);
         V(T_index, 2) = exp(V(T_index, 1));
         V(T_index, 3) = V(T_index, 2) ./ (V(T_index, 2) + 1);
         V(T_index, 4) = lambda .* V(T_index, 3);
         Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
-        if t<T
+        if i<T
             ID_mat(T_index + 1, 6) = Exp_mat(...
                 sub2ind(size(Exp_mat), (1: 1: nvip)', ID_mat(T_index + 1, 3)));
         end
@@ -37,23 +37,20 @@ function [LLH, grad] = KN_HomoLLH(param, ...
     if nargout > 1
         grad = zeros(pred_num + serq_num + 2, 1);
         % beta
-        for t = 1: pred_num
-            grad(t) = -sum((ID_mat(:, 7) ./ V(:, 4) - ...
-                (1 - ID_mat(:, 7)) ./ (1 - V(:, 4)))...
-                .* lambda .* V(:, 3) .* (1 - V(:, 3)) .* Exp_mat(:, t+3));
+        for i = 1: pred_num
+            grad(i) = -sum((ID_mat(:, 7) - V(:, 4)) ...
+                ./ (1 - V(:, 4)).* (1 - V(:, 3)) .* ID_mat(:, i + 3));
+        end   
+        for i = (pred_num + 1): (pred_num + serq_num)
+            grad(i) = -sum((ID_mat(:, 7) - V(:, 4)) ./ (1 - V(:, 4))...
+                .* (1 - V(:, 3)) .* ID_mat(:, i + 4));  
         end
-        grad(pred_num + 1) = -sum((ID_mat(:, 3) ./ V(:, 4) - ...
-            (1 - ID_mat(:, 3)) ./ (1 - V(:, 4))) .* lambda .* V(:, 3)...
-            .* (1 - V(:, 3)) .* post_matrix(sub2ind(size(post_matrix),...
-                ID_mat(:, 2), Exp_mat(:, 2))));
-       
-        % gamma
-        grad(1 + pred_num + serq_num) = -sum((ID_mat(:, 3) ./ V(:, 4) - ...
-            (1 - ID_mat(:, 3)) ./ (1 - V(:, 4)))...
-            .* lambda .* V(:, 3) .* (1 - V(:, 3)));
+        % Grad(gamma) = sum{[y/(1+ev)-lambda*ev/(1+ev)^2]/[1-lambda*ev/(1+ev)]}
+        grad(1 + pred_num + serq_num) = -sum((ID_mat(:, 7) - ...
+            V(:, 4)) ./ (1 - V(:, 4)).* (1 - V(:, 3)));
         % delta
-        grad(end) = -sum((ID_mat(:, 3) ./ V(:, 4) - (1 - ID_mat(:, 3))...
-            ./ (1 - V(:, 4))) .* V(:, 3) .* lambda .* (1 - lambda));
+        grad(end) = -sum((ID_mat(:, 7) ./ lambda + (1 - ID_mat(:, 7))...
+            ./ (1 - V(:, 4)) .* V(:, 3)) .* lambda .* (1 - lambda));
     end
 end
 

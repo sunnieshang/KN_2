@@ -1,8 +1,8 @@
 clc; clearvars; rng('shuffle'); 
-T = 365; 
-nvip = 99; 
+T = 180; 
+nvip = 9; 
 route_min = 1; 
-route_max = 10;
+route_max = 5;
 pred_num = 1; 
 serq_num = 1; % service quality predictor 
 n_continuous = 0;
@@ -28,7 +28,8 @@ vip_route = datasample(route_min: route_max, nvip)';
 %         used in the indirect utility function. The content of this matrix
 %         can be changed according to model specification (which metrics to 
 %         be used in the indirect utility function, only mean or mean+var or 
-%         mean+sd etc. 
+%         mean+sd etc. Current, the size is nvip*(route_max+1) where 
+%         nvip*route_max are the mu_i, and nvip*1 is the std
 % 10. ID_mat: 1, vip id; 2, period (1 to T, the same for everyone); 
 %         3, route index; 4, price; 5, real experience; 6, expected 
 %         experience; 7, shipped or not  
