@@ -1,7 +1,7 @@
 clc; clearvars; rng('shuffle'); 
 T = 180; 
 nvip = 9; 
-route_min = 1; 
+route_min = 3; 
 route_max = 5;
 pred_num = 1; 
 serq_num = 1; % service quality predictor 
@@ -68,7 +68,8 @@ vip_route = datasample(route_min: route_max, nvip)';
 
 %% Simulate parameters
 % Note: gamma cannot vary too much, beta can!!!
-gamma_mu    = normrnd(0, 1, [1, 1]);
+% gamma_mu    = normrnd(0.5, 1, [1, 1]);
+gamma_mu    = 0.8; 
 gamma_sigma = 0.15; 
 gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
                       gamma_sigma, ...
@@ -78,10 +79,11 @@ delta_sigma = 0.1;
 delta       = normrnd(repmat(delta_mu', nvip, 1), ...
                       delta_sigma, ...
                       [nvip, 1]);
-lambda      = exp(delta) ./ (1 + exp(delta));
+% lambda      = exp(delta) ./ (1 + exp(delta));
+lambda = ones(nvip, 1); 
 
-beta_mu     = [-1; 1.2]; 
-beta_sigma  = [0.25; 0.2];
+beta_mu     = [-1; 0.15]; 
+beta_sigma  = [0.25; 0.02];
 beta        = normrnd(repmat(beta_mu', nvip, 1), ...
                       repmat(beta_sigma', nvip, 1), ...
                       [nvip, pred_num + serq_num]); 

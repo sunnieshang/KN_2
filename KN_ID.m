@@ -6,7 +6,7 @@ function [ID_mat] = KN_ID(vip_route, T)
     for i=1:nvip
         ID_mat((i-1)*T+1: i*T, 3) = datasample(1:vip_route(i), T);
     end
-    ID_mat(:, 4) = exp(normrnd(0, 1, [nvip*T, 1])); % price
-    ID_mat(:, 5) = normrnd(0.3, 0.8, [nvip*T, 1]);  % real experience
+    ID_mat(:, 4) = exp(normrnd(0, 1, [nvip*T, 1])); % price  
+    ID_mat(:, 5) = normrnd(-6, 12, [nvip*T, 1]);  % real experience
 end
 

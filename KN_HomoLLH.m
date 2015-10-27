@@ -8,11 +8,12 @@ function [LLH, grad] = KN_HomoLLH(param, ...
 %% minimize "-loglikelihood(LLH)" and recover parameters
 %   Use user supplied gradient
 %   LLH = sum_1^N (V_j - log(sum exp(V_j)))
-    BExpect = ID_mat(:, 6); 
+    BExpect = ID_mat(:, 6); % Bayesian expectation
     beta    = param(1: pred_num + serq_num)'; 
     gamma   = param(pred_num + serq_num + 1); 
-    delta   = param(end); 
-    lambda  = exp(delta) / (1 + exp(delta));
+%     delta   = param(end); 
+%     lambda  = exp(delta) / (1 + exp(delta));
+    lambda = 1; 
     route_max = max(vip_route);
     Exp_mat = KN_Exp(prior_mat, n_continuous, route_max);
     nvip    = size(Exp_mat, 1); 
@@ -21,6 +22,7 @@ function [LLH, grad] = KN_HomoLLH(param, ...
     T_index = (0: T: T * (nvip - 1))';
     LLH     = 0; 
     % predictors updates by period
+    grad = zeros(pred_num + serq_num + 1, 1);
     for i = 1: T 
         T_index = T_index + 1;
         V(:, 1) = KN_IndUtility(T_index, gamma, repmat(beta, nvip, 1), ID_mat);
@@ -34,29 +36,28 @@ function [LLH, grad] = KN_HomoLLH(param, ...
         end
         LLH = LLH -sum(ID_mat(T_index, 7) .* log(V(:, 4)) + ...
             (1 - ID_mat(T_index, 7)) .* log(1 - V(:, 4)));
-    end
-    
-    
-    %% Evaluate the gradient
-    if nargout > 1
-        grad = zeros(pred_num + serq_num + 2, 1);
-        % beta
-        for i = 1: pred_num
-            grad(i) = -sum((ID_mat(:, 7) ./ V(:, 4) - ...
-                (1 - ID_mat(:, 7)) ./ (1 - V(:, 4)))...
-                .* V(:, 4) .* (1 - V(:, 3)) .* ID_mat(:, i + 3));
-        end   
-        grad(i) = -sum((ID_mat(:, 7) ./ V(:, 4) - ...
-                (1 - ID_mat(:, 7)) ./ (1 - V(:, 4)))...
-                .* V(:, 4) .* (1 - V(:, 3)) .* BExpect);  
-        % Grad(gamma) = sum{[y/(1+ev)-lambda*ev/(1+ev)^2]/[1-lambda*ev/(1+ev)]}
-        grad(1 + pred_num + serq_num) = -sum((ID_mat(:, 7) ./ V(:, 4) - ...
-                (1 - ID_mat(:, 7)) ./ (1 - V(:, 4)))...
-                .* V(:, 4) .* (1 - V(:, 3))) ;
-        % delta
-        grad(end) = -sum((ID_mat(:, 7) ./ V(:, 4) - ...
-                (1 - ID_mat(:, 7)) ./ (1 - V(:, 4)))...
-                .* V(:, 4) .* (1 - lambda));
-    end
+        
+        %% Evaluate gradience
+        if nargout > 1
+            % beta
+            for j = 1: pred_num
+                grad(j) = grad(j) - sum((ID_mat(T_index, 7) ./ V(:, 4) - ...
+                    (1 - ID_mat(T_index, 7)) ./ (1 - V(:, 4)))...
+                    .* V(:, 4) .* (1 - V(:, 3)) .* ID_mat(T_index, j + 3));
+            end   
+            grad(pred_num + 1) = grad(pred_num + 1) -sum((ID_mat(T_index, 7) ./ V(:, 4) - ...
+                    (1 - ID_mat(T_index, 7)) ./ (1 - V(:, 4)))...
+                    .* V(:, 4) .* (1 - V(:, 3)) .* BExpect(T_index));  
+%             Grad(gamma) = sum{[y/(1+ev)-lambda*ev/(1+ev)^2]/[1-lambda*ev/(1+ev)]}
+            grad(end) = grad(end) - ...
+                sum((ID_mat(T_index, 7) ./ V(:, 4) - (1 - ID_mat(T_index, 7)) ./ ...
+                (1 - V(:, 4))) .* V(:, 4) .* (1 - V(:, 3))) ;
+%             delta
+%             grad(end) = grad(end) -sum((ID_mat(T_index, 7) ./ V(:, 4) - (1 - ID_mat(T_index, 7)) ...
+%                 ./ (1 - V(:, 4))) .* V(:, 4) .* (1 - lambda));
+        
+        end        
+    end   
 end
-
+    
+    

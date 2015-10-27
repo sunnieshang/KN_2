@@ -2,7 +2,7 @@
 clc; clear var; close all; rng('shuffle'); 
 load data.mat;
 
-nfixed = pred_num + serq_num + 2; % beta (vip*k); gamma (veggie)
+nfixed = pred_num + serq_num + 1; % beta (vip*k); gamma (veggie)
 fixed0 = 0.5 * ones(nfixed, 1);
 f_fixed = @(x)KN_HomoLLH(x,...
                          ID_mat,...
@@ -14,18 +14,15 @@ f_fixed = @(x)KN_HomoLLH(x,...
 % if check derivative, use "central finite difference", more accurate than
 % the default forward finite deifference". 
 ops_fixed = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
-        'DerivativeCheck', 'on', 'GradObj', 'on', 'Display', 'iter', ...
+        'DerivativeCheck', 'off', 'GradObj', 'on', 'Display', 'iter', ...
         'TolX', 1e-9, 'TolFun', 1e-9, 'MaxIter', 1000, ...
         'MaxFunEvals', 1e10, 'FinDiffType', 'central');
 [par_fixed, fval_fixed, exitflag_fixed, output, grad] = ...
     fminunc(f_fixed, fixed0, ops_fixed);
 fixed_beta  = par_fixed(1: pred_num + serq_num);
 fixed_gamma = par_fixed(pred_num + serq_num + 1); 
-fixed_delta = par_fixed(end);
-figure(1); 
-scatter(beta_mu, fixed_beta);
-figure(2); 
-scatter([gamma_mu, delta_mu], [fixed_gamma, fixed_delta]);
+% fixed_delta = par_fixed(end);
+scatter([beta_mu; gamma_mu], [fixed_beta; fixed_gamma]);
 
 %% Create draws to be used in estimation
 % let's follow STATA in using 50 Halton draws per consumer for primes 2 and 3, dropping the first 15 (burn) 
