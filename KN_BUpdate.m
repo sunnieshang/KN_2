@@ -3,8 +3,8 @@ function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
 %% Parameter initialization
     T_update = T_index(ID_mat(T_index, 7)==1);
     ID = ID_mat(T_update, 1); 
-    iter = 500; 
-    burnin = 250; 
+    iter = 1000; 
+    burnin = 500; 
     route_max = max(vip_route); 
     nu = zeros(iter, 1); 
     phi = zeros(iter, 1);
