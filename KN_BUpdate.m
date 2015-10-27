@@ -8,6 +8,9 @@ function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
     route_max = max(vip_route); 
     nu = zeros(iter, 1); 
     phi = zeros(iter, 1);
+    nvip = length(vip_route);
+    T = size(ID_mat, 1)/nvip;
+    t = mod(T_update(1), T);
     for i = 1: length(T_update)
         %% Priors 
         zeta = prior_mat(ID(i), 1);
@@ -17,8 +20,10 @@ function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
         nu_phi = prior_mat(ID(i), 5);
         alpha_mu = prior_mat(ID(i), 6);
         alpha_phi = prior_mat(ID(i), 7);
-        y = ID_mat(ID_mat(:,1)==ID(i) & ID_mat(:,7)==1, 5);
-        categ_mat = ID_mat(ID_mat(:,1)==ID(i) & ID_mat(:,7)==1, 3);
+        y = ID_mat(ID_mat(:, 1)==ID(i) & ID_mat(:, 7)==1 ...
+            & ID_mat(:, 2) <= t, 5);
+        categ_mat = ID_mat(ID_mat(:, 1)==ID(i) & ID_mat(:, 7)==1 ...
+            & ID_mat(:, 2) <= t, 3);
         conti_mat = zeros(size(categ_mat,1), 0);
         n_category = size(categ_mat, 2);
         n_continuous = size(conti_mat, 2);
