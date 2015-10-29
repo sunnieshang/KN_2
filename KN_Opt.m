@@ -1,5 +1,5 @@
 %% Use fixed coefficient model to find the starting point of random C model
-clc; clear var; close all; rng('shuffle'); 
+clc; clear var; rng('shuffle'); 
 load data.mat;
 
 nfixed = pred_num + serq_num + 1; % beta (vip*k); gamma (veggie)
@@ -13,6 +13,8 @@ f_fixed = @(x)KN_HomoLLH(x,...
                          vip_route);
 % if check derivative, use "central finite difference", more accurate than
 % the default forward finite deifference". 
+% The estimation finished in around 30 minutes for 9 customers in 180
+% periods and 22% of positive period (sum(ID_mat(:,7))/size(ID_mat, 1))
 ops_fixed = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
         'DerivativeCheck', 'off', 'GradObj', 'on', 'Display', 'iter', ...
         'TolX', 1e-9, 'TolFun', 1e-9, 'MaxIter', 1000, ...
@@ -22,6 +24,7 @@ ops_fixed = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
 fixed_beta  = par_fixed(1: pred_num + serq_num);
 fixed_gamma = par_fixed(pred_num + serq_num + 1); 
 % fixed_delta = par_fixed(end);
+figure(1);
 scatter([beta_mu; gamma_mu], [fixed_beta; fixed_gamma]);
 
 %% Create draws to be used in estimation
@@ -65,4 +68,4 @@ figure(3); scatter(beta_mu, rbeta_mu);
 figure(4); scatter([gamma_mu;delta_mu], [rgamma_mu;rdelta_mu]);
 figure(5); scatter([beta_sigma;gamma_sigma;delta_sigma], ...
     [rbeta_sigma;rgamma_sigma;rdelta_sigma]);
-save data.mat
+save estimation.mat
