@@ -1,12 +1,16 @@
 clc; clearvars; rng('shuffle'); 
 T = 180; 
 nvip = 9; 
-route_min = 3; 
+route_min = 2; 
 route_max = 5;
 pred_num = 1; 
 serq_num = 1; % service quality predictor 
 n_continuous = 0;
 vip_route = datasample(route_min: route_max, nvip)';
+vip_route_rate = zeros(nvip, route_max);
+for i = 1: nvip
+    vip_route_rate(i, 1: vip_route(i)) = drchrnd(ones(1, vip_route(i)), 1);
+end
 %% NOTE from Andres
 % Look at the data and find the customers having more than 1 route demand
 % in one period. Another option: a predefined number of shipments in every
@@ -74,13 +78,13 @@ gamma_sigma = 0.15;
 gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
                       gamma_sigma, ...
                       [nvip, 1]);
-delta_mu    = normrnd(0.3, 0.1, [1, 1]);
-delta_sigma = 0.1;
-delta       = normrnd(repmat(delta_mu', nvip, 1), ...
-                      delta_sigma, ...
-                      [nvip, 1]);
+% delta_mu    = normrnd(0.3, 0.1, [1, 1]);
+% delta_sigma = 0.1;
+% delta       = normrnd(repmat(delta_mu', nvip, 1), ...
+%                       delta_sigma, ...
+%                       [nvip, 1]);
 % lambda      = exp(delta) ./ (1 + exp(delta));
-lambda = ones(nvip, 1); 
+% lambda = ones(nvip, 1); 
 
 beta_mu     = [-1; 0.15]; 
 beta_sigma  = [0.25; 0.02];
@@ -94,7 +98,7 @@ prior_mat   = KN_Prior(n_continuous, nvip);
 % Exp_mat is the expectation matrix used into utitlity function for decision
 % making
 Exp_mat     = KN_Exp(prior_mat, n_continuous, route_max);
-ID_mat      = KN_ID(vip_route, T);
+ID_mat      = KN_ID(vip_route_rate, T);
 U_mat       = zeros(nvip, 4);
 T_index     = (0: T: T*(nvip-1))';
 
@@ -106,7 +110,8 @@ for t = 1:T
         KN_IndUtility(T_index, gamma, beta, ID_mat);
     U_mat(:, 2) = exp(U_mat(:, 1));
     U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
-    U_mat(:, 4) = lambda .* U_mat(:, 3);
+%     U_mat(:, 4) = lambda .* U_mat(:, 3);
+    U_mat(:, 4) = U_mat(:, 3);
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));   
     % Update believes after real experiences
     Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
