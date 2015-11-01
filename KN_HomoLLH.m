@@ -8,53 +8,60 @@ function [LLH, grad] = KN_HomoLLH(param, ...
 %% minimize "-loglikelihood(LLH)" and recover parameters
 %   Use user supplied gradient
 %   LLH = sum_1^N (V_j - log(sum exp(V_j)))
-    BExpect = ID_mat(:, 6); % Bayesian expectation
     beta    = param(1: pred_num + serq_num)'; 
-    gamma   = param(pred_num + serq_num + 1); 
+    gamma   = param(end); 
 %     delta   = param(end); 
 %     lambda  = exp(delta) / (1 + exp(delta));
-    lambda = 1; 
+%     lambda = 1; 
     route_max = max(vip_route);
     Exp_mat = KN_Exp(prior_mat, n_continuous, route_max);
     nvip    = size(Exp_mat, 1); 
-    T       = size(ID_mat, 1) / nvip;
-    V       = zeros(nvip, 4); 
+    T       = size(ID_mat, 1) / nvip; 
     T_index = (0: T: T * (nvip - 1))';
     LLH     = 0; 
+    vip_route_rate = zeros(nvip, route_max);
+    index = pred_num + serq_num + 1;
+    for i = 1: nvip
+        vip_route_rate(i, 1) = 1/ ...
+            (1 + sum(exp(param(index: (index+vip_route(i)-2)))));
+        vip_route_rate(i, 2: vip_route(i)) = exp(param(index:index+vip_route(i)-2)) ...
+            ./ (1 + sum(exp(param(index: (index+vip_route(i)-2)))));
+        index = index + vip_route(i) - 1; 
+    end
     % predictors updates by period
-    grad = zeros(pred_num + serq_num + 1, 1);
+    grad = zeros(size(param, 1), 1);
     for i = 1: T 
         T_index = T_index + 1;
-        V(:, 1) = KN_IndUtility(T_index, gamma, repmat(beta, nvip, 1), ID_mat);
-        V(:, 2) = exp(V(:, 1));
-        V(:, 3) = V(:, 2) ./ (V(:, 2) + 1);
-        V(:, 4) = lambda .* V(:, 3);
+        IndU(:, :, 1) = KN_IndUtility(T_index, gamma, beta, Exp_mat, ID_mat);
+        IndU(:, :, 2) = exp(IndU(:, :, 1)); 
+        IndU(:, :, 3) = IndU(:, :, 2) ./ (1 + IndU(:, :, 2));
+        IndU(:, :, 4) = IndU(:, :, 3) .* vip_route_rate; 
         Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
-        if i<T
-            BExpect(T_index + 1, 6) = Exp_mat(...
-                sub2ind(size(Exp_mat), (1: 1: nvip)', ID_mat(T_index + 1, 3)));
-        end
-        LLH = LLH -sum(ID_mat(T_index, 7) .* log(V(:, 4)) + ...
-            (1 - ID_mat(T_index, 7)) .* log(1 - V(:, 4)));
+        LLH = LLH -sum(ID_mat(T_index, 7) .* log(IndU(...
+            sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3), 4 * ones(nvip, 1)))) ...
+            + (1 - ID_mat(T_index, 7)) .* log(1 - sum(IndU(:, :, 4), 2)));
         
         %% Evaluate gradience
         if nargout > 1
             % beta
             for j = 1: pred_num
-                grad(j) = grad(j) - sum((ID_mat(T_index, 7) ./ V(:, 4) - ...
-                    (1 - ID_mat(T_index, 7)) ./ (1 - V(:, 4)))...
-                    .* V(:, 4) .* (1 - V(:, 3)) .* ID_mat(T_index, j + 3));
+                grad(j) = grad(j) - sum(ID_mat(T_index, 7) ./ (1 + ...
+                    IndU(sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3), 2 * ones(nvip, 1)))) ...
+                    .* ID_mat(T_index, 4) - ...
+                    (1 - ID_mat(T_index, 7)) ./ (1 - sum(IndU(:, :, 4), 2))...
+                    .* sum(IndU(:, :, 4) ./ (1 + IndU(:, :, 2)) ...
+                    .* repmat(ID_mat(T_index, 4), 1, route_max), 2));
             end   
-            grad(pred_num + 1) = grad(pred_num + 1) -sum((ID_mat(T_index, 7) ./ V(:, 4) - ...
-                    (1 - ID_mat(T_index, 7)) ./ (1 - V(:, 4)))...
-                    .* V(:, 4) .* (1 - V(:, 3)) .* BExpect(T_index));  
-%             Grad(gamma) = sum{[y/(1+ev)-lambda*ev/(1+ev)^2]/[1-lambda*ev/(1+ev)]}
-            grad(end) = grad(end) - ...
-                sum((ID_mat(T_index, 7) ./ V(:, 4) - (1 - ID_mat(T_index, 7)) ./ ...
-                (1 - V(:, 4))) .* V(:, 4) .* (1 - V(:, 3))) ;
-%             delta
-%             grad(end) = grad(end) -sum((ID_mat(T_index, 7) ./ V(:, 4) - (1 - ID_mat(T_index, 7)) ...
-%                 ./ (1 - V(:, 4))) .* V(:, 4) .* (1 - lambda));
+            grad(pred_num + 1) = grad(pred_num + 1) - sum(ID_mat(T_index, 7) ./ (1 + ...
+                    IndU(sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3), 2 * ones(nvip, 1)))) ...
+                    .* Exp_mat(sub2ind(size(Exp_mat), (1: 1: nvip)', ID_mat(T_index, 3))) - ...
+                    (1 - ID_mat(T_index, 7)) ./ (1 - sum(IndU(:, :, 4), 2))...
+                    .* sum(IndU(:, :, 4) ./ (1 + IndU(:, :, 2)).* Exp_mat(:, 1:end-1), 2));  
+
+            grad(end) = grad(end) - sum(ID_mat(T_index, 7) ./ (1 + ...
+                    IndU(sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3), 2 * ones(nvip, 1)))) - ...
+                    (1 - ID_mat(T_index, 7)) ./ (1 - sum(IndU(:, :, 4), 2))...
+                    .* sum(IndU(:, :, 4) ./ (1 + IndU(:, :, 2)), 2));
         
         end        
     end   

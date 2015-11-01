@@ -106,8 +106,9 @@ T_index     = (0: T: T*(nvip-1))';
 for t = 1:T
     % Make decision based on current info
     T_index     = T_index + 1; 
-    U_mat(:, 1) = ...
-        KN_IndUtility(T_index, gamma, beta, ID_mat);
+    IndU = KN_IndUtility(T_index, gamma, beta, Exp_mat, ID_mat);
+    U_mat(:, 1) = IndU(...
+        sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3)));
     U_mat(:, 2) = exp(U_mat(:, 1));
     U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
 %     U_mat(:, 4) = lambda .* U_mat(:, 3);
@@ -115,10 +116,6 @@ for t = 1:T
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));   
     % Update believes after real experiences
     Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
-    if t<T
-        ID_mat(T_index+1, 6) = Exp_mat(...
-            sub2ind(size(Exp_mat), (1: 1: nvip)', ID_mat(T_index+1, 3)));
-    end
 end
 clear i;
 save data.mat; 
