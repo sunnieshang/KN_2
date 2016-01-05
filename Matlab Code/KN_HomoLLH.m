@@ -30,17 +30,17 @@ function [LLH, grad] = KN_HomoLLH(param, ...
     end
     % predictors updates by period
     grad = zeros(size(param, 1), 1);
+    IndU = zeros(nvip, route_max, 4);
     for i = 1: T 
         T_index = T_index + 1;
         IndU(:, :, 1) = KN_IndUtility(T_index, gamma, beta, Exp_mat, ID_mat);
         IndU(:, :, 2) = exp(IndU(:, :, 1)); 
         IndU(:, :, 3) = IndU(:, :, 2) ./ (1 + IndU(:, :, 2));
         IndU(:, :, 4) = IndU(:, :, 3) .* vip_route_rate; 
-        Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
         LLH = LLH -sum(ID_mat(T_index, 7) .* log(IndU(...
             sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3), 4 * ones(nvip, 1)))) ...
             + (1 - ID_mat(T_index, 7)) .* log(1 - sum(IndU(:, :, 4), 2)));
-        
+        Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
         %% Evaluate gradience
         if nargout > 1
             % beta

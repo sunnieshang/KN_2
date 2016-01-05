@@ -43,10 +43,12 @@ end
 %% Parameter and Model Specification
 % EU = gamma + beta*data_predictor
 % gamma ~ N(gamma_mu, gamma_sigma)
-% lambda = exp(delta)/(1+exp(delta))----->delta ~ N(delta_mu, delta_sigma)
-% Note: lambda is the arrival rate. The arrival rate should be less than 1
-%       so that our model can handle the situation that people don't arrive
-%       everyday. 
+% Not Userd Currently: lambda = exp(delta)/(1+exp(delta))----->delta ~ N(delta_mu, delta_sigma)
+%     Note: lambda is the arrival rate. The arrival rate should be less than 1
+%         so that our model can handle the situation that people don't arrive
+%         everyday. Currenly the lambda is not used. Instead, we use a
+%         multinomial distribution for the route each customer choose in each
+%         period among all the possible routes of this specific customer
 % beta  ~ N(beta_mu, beta_sigma)
 % Indirect Utiltiy = beta_1*pred_1 + 
 %     beta_2*E(service_quality|route r, customer i)
@@ -104,8 +106,8 @@ T_index     = (0: T: T*(nvip-1))';
 
 %% predictors updates by period
 for t = 1:T
-    % Make decision based on current info
-    T_index     = T_index + 1; 
+%     Make decision based on current info
+    T_index     = T_index + 1;
     IndU = KN_IndUtility(T_index, gamma, beta, Exp_mat, ID_mat);
     U_mat(:, 1) = IndU(...
         sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3)));
@@ -114,8 +116,10 @@ for t = 1:T
 %     U_mat(:, 4) = lambda .* U_mat(:, 3);
     U_mat(:, 4) = U_mat(:, 3);
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));   
-    % Update believes after real experiences
+%     Update believes after real experiences
     Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
+    ID_mat(T_index, 6) = ...
+        Exp_mat(sub2ind(size(Exp_mat), 1:nvip,ID_mat(T_index, 3)'))'; 
 end
 clear i;
 save data.mat; 
