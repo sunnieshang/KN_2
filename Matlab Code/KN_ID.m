@@ -9,6 +9,6 @@ function [ID_mat] = KN_ID(vip_route_rate, T)
             .* repmat(1:1:route_max, T, 1), 2);
     end
     ID_mat(:, 4) = exp(normrnd(0, 1, [nvip*T, 1])); % price  
-    ID_mat(:, 5) = normrnd(-6, 12, [nvip*T, 1]);  % real experience
+    ID_mat(:, 5) = normrnd(-8, 16, [nvip*T, 1]);  % real experience
 end
 

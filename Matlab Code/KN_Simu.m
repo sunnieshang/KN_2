@@ -1,8 +1,8 @@
 clc; clearvars; rng('shuffle'); 
-T = 180; 
-nvip = 9; 
+T = 100; 
+nvip = 20; 
 route_min = 2; 
-route_max = 5;
+route_max = 3;
 pred_num = 1; 
 serq_num = 1; % service quality predictor 
 n_continuous = 0;
@@ -77,6 +77,7 @@ end
 % gamma_mu    = normrnd(0.5, 1, [1, 1]);
 gamma_mu    = 0.8; 
 gamma_sigma = 0.15; 
+% gamma_sigma = 0;
 gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
                       gamma_sigma, ...
                       [nvip, 1]);
@@ -88,8 +89,9 @@ gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
 % lambda      = exp(delta) ./ (1 + exp(delta));
 % lambda = ones(nvip, 1); 
 
-beta_mu     = [-1; 0.15]; 
+beta_mu     = [-1; 0.12]; 
 beta_sigma  = [0.25; 0.02];
+% beta_sigma  = [0; 0];
 beta        = normrnd(repmat(beta_mu', nvip, 1), ...
                       repmat(beta_sigma', nvip, 1), ...
                       [nvip, pred_num + serq_num]); 
