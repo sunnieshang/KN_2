@@ -1,4 +1,4 @@
-function Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route)
+function [MExp_mat, VExp_mat] = KN_BUpdate(T_index, ID_mat, prior_mat, MExp_mat, VExp_mat, vip_route)
 % Note from Andres: need to make sure the samplers are converged
 %% Parameter initialization
 T_update = T_index(ID_mat(T_index, 7)==1);
@@ -6,24 +6,28 @@ if ~isempty(T_update)
     ID = ID_mat(T_update, 1); 
     iter = 1000; 
     burnin = 500; 
-    route_max = max(vip_route); 
-    nu = zeros(iter, 1); 
-    phi = zeros(iter, 1);
+    route_max = max(vip_route);    
     nvip = length(vip_route);
     T = size(ID_mat, 1)/nvip;
-    t = mod(T_update(1), T);
-    for i = 1: length(T_update)
+    
+    PMExp_mat = MExp_mat(ID, :);
+    PVExp_mat = VExp_mat(ID, :);
+    parfor i = 1: length(T_update)
         %% Priors 
-        zeta = prior_mat(ID(i), 1);
-        kappa = prior_mat(ID(i), 2);
-        phi_a = prior_mat(ID(i), 3);
-        phi_b = prior_mat(ID(i), 4);
-        nu_phi = prior_mat(ID(i), 5);
-        alpha_mu = prior_mat(ID(i), 6);
-        alpha_phi = prior_mat(ID(i), 7);
-        y = ID_mat(ID_mat(:, 1)==ID(i) & ID_mat(:, 7)==1 ...
+        id = ID(i);
+        t = mod(T_update(1), T);
+        nu = zeros(iter, 1); 
+        phi = zeros(iter, 1);
+        zeta = prior_mat(id, 1);
+        kappa = prior_mat(id, 2);
+        phi_a = prior_mat(id, 3);
+        phi_b = prior_mat(id, 4);
+        nu_phi = prior_mat(id, 5);
+        alpha_mu = prior_mat(id, 6);
+        alpha_phi = prior_mat(id, 7);
+        y = ID_mat(ID_mat(:, 1)==id & ID_mat(:, 7)==1 ...
             & ID_mat(:, 2) <= t, 5);
-        categ_mat = ID_mat(ID_mat(:, 1) == ID(i) & ID_mat(:, 7) == 1 ...
+        categ_mat = ID_mat(ID_mat(:, 1) == id & ID_mat(:, 7) == 1 ...
             & ID_mat(:, 2) <= t, 3);
         conti_mat = zeros(size(categ_mat, 1), 0);
         n_category = size(categ_mat, 2);
@@ -48,11 +52,12 @@ if ~isempty(T_update)
         %% Using the last expectation as starting point to reduce burnin    
         mu = zeros(iter, sum(levels_in_category)+n_continuous);
         % TODO: need to change when having multiple categorial predictors
-        mu(1, 1:sum(levels_in_category)) = ...
-            Exp_mat(ID(i), 1: sum(levels_in_category));
-        mu(1, (sum(levels_in_category) + 1): (sum(levels_in_category) + n_continuous)) = ...
-            Exp_mat(ID(i), route_max + 1: end - 1);
-        phi(1) = Exp_mat(ID(i), end);
+        mid_exp = PMExp_mat(i, :);
+        mid_exp1 = mid_exp(1:sum(levels_in_category));
+        mid_exp2 = mid_exp(route_max + 1: end);
+        mu(1, 1:sum(levels_in_category)) = mid_exp1;
+        mu(1, (sum(levels_in_category) + 1): (sum(levels_in_category) + n_continuous)) = mid_exp2;
+        phi(1) = PVExp_mat(i);
         
         %% Gibbs sampling
         % anonymous function
@@ -102,10 +107,13 @@ if ~isempty(T_update)
         end
     
         %% post Gibbs sampling selection
-        Exp_mat(ID(i), [1: sum(levels_in_category), route_max + 1: end - 1])...
-            = mean(mu(burnin: iter, :), 1);
-        Exp_mat(ID(i), end) = mean(phi(burnin: iter, :), 1);
+        mid_exp([1: sum(levels_in_category), route_max + 1: end - 1]) = mean(mu(burnin: iter, :), 1);
+        
+        PMExp_mat(i, :) = mid_exp;
+        PVExp_mat(i) = mean(phi(burnin: iter, :), 1);
     end
+    MExp_mat(ID, :) = PMExp_mat;
+    VExp_mat(ID, :) = PVExp_mat;
 end
 end
 

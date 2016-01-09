@@ -1,28 +1,32 @@
 %% Use fixed coefficient model to find the starting point of random C model
 clc; clear var; rng('shuffle'); 
-load data.mat;
+load data_0108.mat;
 
-nfixed = pred_num + serq_num + sum(vip_route) - nvip + 1; % beta (vip*k); gamma (veggie)
-fixed0 = -0.8 * ones(nfixed, 1); fixed0(2) = 0; fixed0(end) = 1;
+
+nfixed = pred_num + serq_num + sum(vip_route) - nvip; % beta (vip*k); gamma (veggie)
+fixed0 = -0.5 * ones(nfixed, 1); 
+% fixed0 = par_fixed;
+% fixed0(1:2) = beta_mu';
+% fixed0(end) = gamma_mu;
+% fixed0(2) = 0.5;
 f_fixed = @(x)KN_HomoLLH(x,...
                          ID_mat,...
-                         prior_mat,...
                          pred_num,...
                          serq_num,...
-                         n_continuous,...
-                         vip_route);
+                         vip_route, P_mat, RMExp_mat);
 % if check derivative, use "central finite difference", more accurate than
 % the default forward finite deifference". 
 % The estimation finished in around 30 minutes for 9 customers in 180
 % periods and 22% of positive period (sum(ID_mat(:,7))/size(ID_mat, 1))
 ops_fixed = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
-        'DerivativeCheck', 'off', 'GradObj', 'on', 'Display', 'iter-detailed', ...
+        'DerivativeCheck', 'off', 'GradObj', 'off', 'Display', 'iter', ...
         'TolX', 1e-9, 'TolFun', 1e-9, 'MaxIter', 1000, ...
-        'MaxFunEvals', 1e10, 'FinDiffType', 'central');
+        'MaxFunEvals', 1e10, 'FinDiffType', 'forward', 'MaxIter', 1000);
 [par_fixed, fval_fixed, exitflag_fixed, output, grad] = ...
     fminunc(f_fixed, fixed0, ops_fixed);
 fixed_beta  = par_fixed(1: pred_num + serq_num);
-fixed_gamma = par_fixed(end); 
+fixed_gamma = par_fixed(end);
+% fixed_gamma = par_fixed(end); 
 index = serq_num + pred_num + 1;
 fixed_rate = zeros(nvip, route_max);
 figure(1)
@@ -36,8 +40,9 @@ for i = 1: nvip
     scatter(fixed_rate(i, :), vip_route_rate(i, :));
 end
 figure(2);
-scatter([beta_mu; gamma_mu], [fixed_beta; fixed_gamma]);
-
+scatter([beta_mu], [fixed_beta]);
+fixed0 = par_fixed;
+save data_0108.mat
 
 %% Create draws to be used in estimation
 % let's follow STATA in using 50 Halton draws per consumer for primes 2 and 3, dropping the first 15 (burn) 

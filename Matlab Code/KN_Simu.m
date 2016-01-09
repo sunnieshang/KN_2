@@ -2,7 +2,7 @@ clc; clearvars; rng('shuffle');
 T = 100; 
 nvip = 20; 
 route_min = 2; 
-route_max = 3;
+route_max = 4;
 pred_num = 1; 
 serq_num = 1; % service quality predictor 
 n_continuous = 0;
@@ -75,9 +75,10 @@ end
 %% Simulate parameters
 % Note: gamma cannot vary too much, beta can!!!
 % gamma_mu    = normrnd(0.5, 1, [1, 1]);
-gamma_mu    = 0.8; 
-gamma_sigma = 0.15; 
-% gamma_sigma = 0;
+% gamma_mu    = -0.7; 
+gamma_mu = 0; 
+% gamma_sigma = 0.15; 
+gamma_sigma = 0;
 gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
                       gamma_sigma, ...
                       [nvip, 1]);
@@ -89,7 +90,7 @@ gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
 % lambda      = exp(delta) ./ (1 + exp(delta));
 % lambda = ones(nvip, 1); 
 
-beta_mu     = [-1; 0.12]; 
+beta_mu     = [-1; -0.15]; 
 beta_sigma  = [0.25; 0.02];
 % beta_sigma  = [0; 0];
 beta        = normrnd(repmat(beta_mu', nvip, 1), ...
@@ -101,8 +102,8 @@ beta        = normrnd(repmat(beta_mu', nvip, 1), ...
 prior_mat   = KN_Prior(n_continuous, nvip);
 % Exp_mat is the expectation matrix used into utitlity function for decision
 % making
-Exp_mat     = KN_Exp(prior_mat, n_continuous, route_max);
-ID_mat      = KN_ID(vip_route_rate, T);
+[MExp_mat, VExp_mat] = KN_Exp(prior_mat, n_continuous, route_max);
+[ID_mat, P_mat, S_mat] = KN_ID(vip_route_rate, T, vip_route);
 U_mat       = zeros(nvip, 4);
 T_index     = (0: T: T*(nvip-1))';
 
@@ -110,7 +111,7 @@ T_index     = (0: T: T*(nvip-1))';
 for t = 1:T
 %     Make decision based on current info
     T_index     = T_index + 1;
-    IndU = KN_IndUtility(T_index, gamma, beta, Exp_mat, ID_mat);
+    IndU = KN_IndUtility(T_index, gamma, beta, MExp_mat, P_mat, vip_route);
     U_mat(:, 1) = IndU(...
         sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3)));
     U_mat(:, 2) = exp(U_mat(:, 1));
@@ -119,11 +120,22 @@ for t = 1:T
     U_mat(:, 4) = U_mat(:, 3);
     ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));   
 %     Update believes after real experiences
-    Exp_mat = KN_BUpdate(T_index, ID_mat, prior_mat, Exp_mat, vip_route); 
+    [MExp_mat, VExp_mat] = KN_BUpdate(T_index, ID_mat, prior_mat, MExp_mat, VExp_mat, vip_route); 
     ID_mat(T_index, 6) = ...
-        Exp_mat(sub2ind(size(Exp_mat), 1:nvip,ID_mat(T_index, 3)'))'; 
+        MExp_mat(sub2ind(size(MExp_mat), 1:nvip,ID_mat(T_index, 3)'))'; 
 end
 clear i;
-save data.mat; 
+
+T_index = (1: T: T*(nvip-1)+1)';
+RMExp_mat = zeros(nvip*T, route_max); % real mean expectation mat
+RVExp_mat = zeros(nvip*T, 1); % real variance expectation mat
+[RMExp_mat(T_index, :), RVExp_mat(T_index, :)] = KN_Exp(prior_mat, n_continuous, route_max);
+for t = 1:T-2
+    [RMExp_mat(T_index+1, :), RVExp_mat(T_index+1, :)] = ...
+        KN_BUpdate(T_index, ID_mat, prior_mat, ...
+        RMExp_mat(T_index, :), RVExp_mat(T_index, :), vip_route);
+    T_index = T_index + 1;
+end
+save data_0108.mat; 
 
 
