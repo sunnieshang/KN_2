@@ -118,11 +118,12 @@ for t = 1:T
     U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
 %     U_mat(:, 4) = lambda .* U_mat(:, 3);
     U_mat(:, 4) = U_mat(:, 3);
-    ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));   
-%     Update believes after real experiences
-    [MExp_mat, VExp_mat] = KN_BUpdate(T_index, ID_mat, prior_mat, MExp_mat, VExp_mat, vip_route); 
+    ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));  
     ID_mat(T_index, 6) = ...
         MExp_mat(sub2ind(size(MExp_mat), 1:nvip,ID_mat(T_index, 3)'))'; 
+%     Update believes after real experiences
+    [MExp_mat, VExp_mat] = KN_BUpdate(T_index, ID_mat, prior_mat, ...
+        MExp_mat, VExp_mat, vip_route);  
 end
 clear i;
 
@@ -130,7 +131,7 @@ T_index = (1: T: T*(nvip-1)+1)';
 RMExp_mat = zeros(nvip*T, route_max); % real mean expectation mat
 RVExp_mat = zeros(nvip*T, 1); % real variance expectation mat
 [RMExp_mat(T_index, :), RVExp_mat(T_index, :)] = KN_Exp(prior_mat, n_continuous, route_max);
-for t = 1:T-2
+for t = 1:T-1
     [RMExp_mat(T_index+1, :), RVExp_mat(T_index+1, :)] = ...
         KN_BUpdate(T_index, ID_mat, prior_mat, ...
         RMExp_mat(T_index, :), RVExp_mat(T_index, :), vip_route);
