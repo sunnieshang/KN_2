@@ -1,99 +1,99 @@
-function [LLH, grad] = KN_HeteLLH(param, matrix,pred_num,choice_max, draws)
-% KN_RANDOMLLH Summary of this function goes here
-    ndraws = size(draws,3); nvip = size(draws,1); 
-    N = size(matrix,1); par_num = length(param);
-    grad = zeros(size(param,1),1); 
+function [LLH, grad] = KN_HeteLLH(...
+    param, ID_mat, pred_num, serq_num, vip_route, P_mat, RMExp_mat, draws)
     
-    beta_mu = param(1:pred_num); 
-    gamma_mu = param(pred_num+1:pred_num+choice_max); 
-    delta_mu = param(pred_num+choice_max+1);
-    
-    beta_sigma = exp(param(pred_num+2*choice_max+1:...
-        2*pred_num+2*choice_max));
-    gamma_sigma = exp(param(2*pred_num+2*choice_max+1)); 
-    delta_sigma = exp(param(end)); 
-    
-    Pmat = zeros(nvip,ndraws); 
-    Gmat = zeros(nvip,par_num);
-    % draws: vip, choice_max+pred_num,draws
-    % 1, trip; 2, vip; 3, choice; 4, veggieid; 5, period; 6, price; 7, fresh
-    % 8. V; 9, EV; 10, sum(EV) each trip; 11, prob of each trip
-    
-    draws_beta = zeros(nvip,pred_num,ndraws);
-    draws_gamma = zeros(nvip,choice_max+1,ndraws);
-    draws_delta = zeros(nvip, choice_max, ndraws);
-    for i=1:1:pred_num
-        draws_beta(:,i,:) = beta_sigma(i).*draws(:,i,:) + beta_mu(i);
+    ndraws = size(draws, 3); 
+    beta_mu = param(1: pred_num + serq_num)'; 
+    beta_sigma = exp(param(end - 1 : end))'; 
+    gamma = 0;
+%     gamma   = param(end);  
+    route_max = size(RMExp_mat, 2);
+    nvip = length(vip_route); 
+    T = size(ID_mat, 1) / nvip; 
+    vip_route_rate = zeros(nvip, route_max);
+    index = pred_num + serq_num + 1;
+    for i = 1: nvip
+        vip_route_rate(i, 1) = 1/ ...
+            (1 + sum(exp(param(index: (index+vip_route(i)-2)))));
+        vip_route_rate(i, 2: vip_route(i)) = exp(param(index: index+vip_route(i)-2)) ...
+            ./ (1 + sum(exp(param(index: (index+vip_route(i)-2)))));
+        index = index + vip_route(i) - 1; 
     end
-    for i=1:1:choice_max
-        draws_gamma(:,i,:) = gamma_sigma(i).*draws(:,i+pred_num,:) + gamma_mu(i);
+    draws_beta = 0 * draws;
+    for i = 1: pred_num+serq_num
+        draws_beta(:, i, :) = beta_sigma(i) .* draws(:, i, :) + beta_mu(i);
     end
-    for i = 1:1:choice_max
-        draws_delta(:,i,:) = delta_sigma(i).*draws(:,i+pred_num+choice_max,:)...
-            + delta_mu(i);
-    end
-    draws_lambda = exp(draws_delta)./(1+exp(draws_delta));
-    draws_gamma(:,choice_max+1,:) = zeros(nvip,ndraws);
-    visit_matsparse=sparse((1:N)',matrix(:,1),1);
-    vip_matsparse=sparse((1:N)',matrix(:,2),1);
-    V = zeros(N, 6); 
-    for i = 1:1:ndraws 
-        V(:,1) = sum(matrix(:,6:7).*draws_beta(matrix(:,2),:,i),2)+...
-            draws_gamma(sub2ind(size(draws_gamma),matrix(:,2),matrix(:,4),repmat(i,N,1)));
-        V(:,2) = exp(V(:,1));
-        mid = visit_matsparse'*V(:,2);
-        V(:,3) = mid(matrix(:,1)); 
-        V(:,4) = V(:,2)./V(:,3);
-        V(:, 5) = draws_lambda(matrix(:,2),:,i) .* V(:,4);
-        V(2:2:end, 5) = 1 - V(1:2:end,5);
-        V(:,6) = 1./V(:,5); 
-        V(2:2:end,6) = -V(2:2:end,6);
-        for j=1:1:nvip
-            Pmat(j,i) = prod(V(matrix(:,2)==j & matrix(:,3)==1, 5));
-        end
-        if nargout>1 
-            % beta
-            for j = 1:pred_num
-                Gmat(:,j) = Gmat(:,j) + Pmat(:,i).*...
-                    (vip_matsparse'*(V(:,6).*matrix(:,3)...
-                    .*draws_lambda(matrix(:,2),:,i).*V(:,4).*(1-V(:,4)).*kron(matrix(1:2:end,j+5),[1;1])));
+    IndU = zeros(size(P_mat, 1), size(P_mat, 2), 2);
+    P_IR = zeros(nvip, ndraws); 
+    GG = zeros(nvip, length(param));
+    grad = zeros(length(param), 1);
+    mid_mat = kron(eye(nvip), ones(T, 1))';
+    
+    for i = 1: ndraws           
+%     We need a 3D matrix here (different than the simulation code) since
+%     we need to write down all the possible utility of all possible routes
+        IndU(:, :, 1) = KN_IndUtility(1: T*nvip, repmat(gamma, nvip, 1),...
+            draws_beta(:, :, i), RMExp_mat, P_mat, vip_route);
+        IndU(:, :, 1) = exp(IndU(:, :, 1)); 
+        IndU(:, :, 1) = IndU(:, :, 1) ./ (1 + IndU(:, :, 1));
+        IndU(:, :, 2) = IndU(:, :, 1) .* kron(vip_route_rate, ones(T, 1)); 
+        logP = ID_mat(:, 7) .* log(IndU(sub2ind(size(IndU), ...
+            (1: nvip*T)', ID_mat(:, 3), 2 * ones(nvip*T, 1)))) ...
+            + (1 - ID_mat(:, 7)) .* log(1 - sum(IndU(:, :, 2), 2));           
+        P_IR(:, i) = exp(mid_mat * logP);
+        
+        if nargout > 1 
+            for j = 1: pred_num
+                GG(:, j) = GG(:, j) + P_IR(:, i).*(mid_mat * (ID_mat(:, 7) .* (1 - ...
+                IndU(sub2ind(size(IndU), (1: 1: nvip*T)', ID_mat(:, 3), 1 * ones(nvip*T, 1)))) ...
+                .* ID_mat(:, 4) - (1 - ID_mat(:, 7)) ./ (1 - sum(IndU(:, :, 2), 2))...
+                .* sum(IndU(:, :, 2) .* (1 - IndU(:, :, 1)) ...
+                .* P_mat, 2)));
             end
-            % gamma
-            for j=1:1:choice_max
-                Gmat(:,pred_num+j) = Gmat(:,pred_num+j) + ...
-                    Pmat(:,i).*(vip_matsparse'*(V(:,6).*matrix(:,3)...
-                    .*draws_lambda(matrix(:,2),:,i).*V(:,4).*(1-V(:,4))));
-            end
-            % delta
-            Gmat(:,pred_num+2*choice_max) = Gmat(:,pred_num+2*choice_max) + Pmat(:,i)...
-                .*(vip_matsparse'*(V(:,6).*matrix(:,3).*kron(V(1:2:end, 4),[1;1])...
-                .*draws_lambda(matrix(:,2),:,i).*(1-draws_lambda(matrix(:,2),:,i))));
+            GG(:, pred_num + serq_num) = GG(:, pred_num + serq_num) + ...
+                P_IR(:, i).*(mid_mat * (ID_mat(:, 7) .* (1 - ...
+                IndU(sub2ind(size(IndU), (1: 1: nvip*T)', ID_mat(:, 3), 1 * ones(nvip*T, 1)))) ...
+                .* RMExp_mat(sub2ind(size(RMExp_mat), (1: 1: nvip*T)', ID_mat(:, 3))) - ...
+                (1 - ID_mat(:, 7)) ./ (1 - sum(IndU(:, :, 2), 2))...
+                .* sum(IndU(:, :, 2) .* (1 - IndU(:, :, 1)).* RMExp_mat, 2)));
             
-            % beta_sigma
-            for j = 1:pred_num
-                Gmat(:,pred_num+2*choice_max+j) =...
-                    Gmat(:,pred_num+2*choice_max+j) + ...
-                    Pmat(:,i).*(vip_matsparse'*(V(:,6).*matrix(:,3)...
-                    .*draws_lambda(matrix(:,2),:,i).*V(:,4).*(1-V(:,4))...
-                    .*kron(matrix(1:2:end,j+5),[1;1]).*draws(matrix(:,2),j,i)*beta_sigma(j)));
-            end
-            % gamma_sigma
-            for j=1:1:choice_max
-                Gmat(:,2*pred_num+2*choice_max+j) = Gmat(:,2*pred_num+2*choice_max+j)+...
-                    Pmat(:,i).*(vip_matsparse'*(V(:,6).*matrix(:,3)...
-                    .*draws_lambda(matrix(:,2),:,i).*V(:,4).*(1-V(:,4)).*...
-                    draws(matrix(:,2),j+pred_num,i)*gamma_sigma(j)));
-            end
-            % delta_sigma
-            Gmat(:,end) = Gmat(:,end) + Pmat(:,i)...
-                .*(vip_matsparse'*(V(:,6).*matrix(:,3).*kron(V(1:2:end, 4),[1;1])...
-                .*draws_lambda(matrix(:,2),:,i).*...
-                (1-draws_lambda(matrix(:,2),:,i)).*draws(matrix(:,2),pred_num+2*choice_max,i)*delta_sigma));
+            for j = 1: nvip
+                if (j==1)
+                    index = pred_num + serq_num + 1;
+                else 
+                    index = index + vip_route(j-1) - 1; 
+                end
+                aux = zeros(vip_route(j), T);
+                aux(sub2ind(size(aux), ID_mat(T*(j-1)+1:T*j, 3), (1:T)')) = 1;
+                aux = aux(2:end, :);
+                GG(j, index: index + vip_route(j) - 2) = ...
+                    GG(j, index: index + vip_route(j) - 2) - ...
+                    P_IR(j, i)*((repmat(vip_route_rate(j, 2:vip_route(j))', 1, T) - aux)...
+                    *ID_mat(T*(j-1)+1:T*j, 7) + ...
+                    vip_route_rate(j, 2:vip_route(j))' .* ...
+                    ((IndU(T*(j-1)+1:T*j, 2:vip_route(j), 1) - ...
+                    repmat(sum(IndU(T*(j-1)+1:T*j, :, 2), 2), 1, vip_route(j)-1))'* ...
+                    ((1 - ID_mat(T*(j-1)+1:T*j, 7)) ./ ...
+                    (1 - sum(IndU(T*(j-1)+1:T*j, :, 2), 2)))))';
+            end 
+            
+            GG(:, end-1) = GG(:, end-1) + P_IR(:, i).*(mid_mat * (ID_mat(:, 7) .* (1 - ...
+                IndU(sub2ind(size(IndU), (1: 1: nvip*T)', ID_mat(:, 3), 1 * ones(nvip*T, 1)))) ...
+                .* ID_mat(:, 4) - (1 - ID_mat(:, 7)) ./ (1 - sum(IndU(:, :, 2), 2))...
+                .* sum(IndU(:, :, 2) .* (1 - IndU(:, :, 1)) ...
+                .* P_mat, 2))) .* draws(:, 1, i) .* beta_sigma(1);
+            GG(:, end) = GG(:, end) + ...
+                P_IR(:, i).*(mid_mat * (ID_mat(:, 7) .* (1 - ...
+                IndU(sub2ind(size(IndU), (1: 1: nvip*T)', ID_mat(:, 3), 1 * ones(nvip*T, 1)))) ...
+                .* RMExp_mat(sub2ind(size(RMExp_mat), (1: 1: nvip*T)', ID_mat(:, 3))) - ...
+                (1 - ID_mat(:, 7)) ./ (1 - sum(IndU(:, :, 2), 2))...
+                .* sum(IndU(:, :, 2) .* (1 - IndU(:, :, 1)).* RMExp_mat, 2))) ...
+                 .* draws(:, 2, i) .* beta_sigma(2);
         end
     end
    
-    LLH  =-sum(log(sum(Pmat,2))); % use sum instead of mean
-    if nargout>1
-        grad = -sum(Gmat./repmat(sum(Pmat,2),1,par_num), 1)';
+    LLH  = -sum(log(mean(P_IR, 2)));
+    if nargout > 1
+        grad = -sum(GG./repmat(sum(P_IR, 2), 1, length(param)), 1)';
     end
+end
 

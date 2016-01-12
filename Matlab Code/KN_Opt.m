@@ -2,7 +2,7 @@
 clc; clear var; rng('shuffle'); 
 load data_0108.mat;
 
-
+%% Homogeneous Parameters Estimation
 nfixed = pred_num + serq_num + sum(vip_route) - nvip; % beta (vip*k); gamma (veggie)
 fixed0 = 0 * ones(nfixed, 1); 
 % fixed0 = par_fixed;
@@ -44,38 +44,46 @@ scatter(beta_mu, fixed_beta);
 fixed0 = par_fixed;
 save data_0108.mat
 
+%% Heterogeneous Parameters Estimation
 %% Create draws to be used in estimation
 % let's follow STATA in using 50 Halton draws per consumer for primes 2 and 3, dropping the first 15 (burn) 
 ndraws = 50;
-haltondraws = haltonset(2 * route_max + pred_num, 'Skip', 15);
+haltondraws = haltonset(pred_num+serq_num, 'Skip', 15);
 haltondraws = scramble(haltondraws, 'RR2'); 
-draws = zeros(nvip, 2 * route_max + pred_num, ndraws);
-for i=1: 2 * route_max+pred_num
+draws = zeros(nvip, pred_num+serq_num, ndraws);
+for i=1: pred_num + serq_num
      draws(:, i, :) = reshape(norminv(haltondraws(1: nvip*ndraws, i), 0, 1), ...
          nvip, ndraws);
 end
 
 %% Recover/Estimate random coefficient
 nrandom = nfixed + pred_num + serq_num; % plus STD for each beta
-random0 = [par_fixed; 0.5 * ones(pred_num + serq_num, 1)];
-f_random = @(x)KN_HeteLLH(x, matrix, pred_num, route_max, draws);
+random0 = [par_fixed; -2 * ones(pred_num + serq_num, 1)];
+f_random = @(x)KN_HeteLLH(x, ID_mat, pred_num, serq_num, ...
+    vip_route, P_mat, RMExp_mat, draws);
 ops_random = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
-    'DerivativeCheck', 'off', 'GradObj', 'off', 'HessUpdate', 'bfgs',...
+    'DerivativeCheck', 'off', 'GradObj', 'on', ...
     'Display', 'iter', 'TolX', 1e-9,'TolFun', 1e-9, 'MaxIter', 1000,...
     'MaxFunEvals', 1e10, 'FinDiffType', 'forward');
-[par_random, fval_random, exitflag_random, ...
-    output_random, grad_random, hess_random]...
+[par_random, fval_random, exitflag_random, output_random, grad_random, hess_random]...
     = fminunc(f_random, random0, ops_random);
 SE = sqrt(diag(inv(hess_random)));
 
-% beta_mu: 1---pred_num+serq_num;
-% beta_sigma: pred_num+serq_num+1---2*pred_num+2*serq_num
 rbeta_mu  = par_random(1:pred_num+serq_num); 
-rbeta_sigma = exp(par_random(pred_num+serq_num+1:2*pred_num+2*serq_num));
-% rgamma_mu = par_random(pred_num+1:pred_num+route_max); 
-rdelta_mu = par_random(pred_num+route_max+1);
-
-figure(3); scatter(beta_mu, rbeta_mu);
-figure(4); scatter([gamma_mu;delta_mu], [rgamma_mu;rdelta_mu]);
-figure(5); scatter(beta_sigma, rbeta_sigma);
+rbeta_sigma = exp(par_random(end - (pred_num + serq_num) + 1 : end));
+rrate = zeros(nvip, route_max);
+figure(1)
+index = pred_num + serq_num + 1; 
+for i = 1: nvip
+    rrate(i, 1) = 1/ ...
+        (1 + sum(exp(par_random(index: (index+vip_route(i)-2)))));
+    rrate(i, 2: vip_route(i)) = exp(par_random(index: index+vip_route(i) - 2)) ...
+        ./ (1 + sum(exp(par_random(index: (index + vip_route(i)-2)))));
+    index = index + vip_route(i) - 1; 
+    hold on;
+    scatter(rrate(i, :), vip_route_rate(i, :));
+end
+figure(2);
+scatter(beta_mu, rbeta_mu);
+random0 = par_random;
 save estimation.mat
