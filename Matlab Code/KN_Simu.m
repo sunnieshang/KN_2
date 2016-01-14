@@ -1,5 +1,5 @@
 clc; clearvars; rng('shuffle'); 
-T = 100; 
+T = 52; 
 nvip = 20; 
 route_min = 2; 
 route_max = 4;
@@ -75,10 +75,10 @@ end
 %% Simulate parameters
 % Note: gamma cannot vary too much, beta can!!!
 % gamma_mu    = normrnd(0.5, 1, [1, 1]);
-% gamma_mu    = -0.7; 
-gamma_mu = 0; 
-% gamma_sigma = 0.15; 
-gamma_sigma = 0;
+gamma_mu    = - 1.2; 
+% gamma_mu = 0; 
+gamma_sigma = 0.2; 
+% gamma_sigma = 0;
 gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
                       gamma_sigma, ...
                       [nvip, 1]);
@@ -90,8 +90,8 @@ gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
 % lambda      = exp(delta) ./ (1 + exp(delta));
 % lambda = ones(nvip, 1); 
 
-beta_mu     = [-1; -0.15]; 
-beta_sigma  = [0.25; 0.02];
+beta_mu     = [-0.4; -0.25]; 
+beta_sigma  = [0.07; 0.05];
 % beta_sigma  = [0; 0];
 beta        = normrnd(repmat(beta_mu', nvip, 1), ...
                       repmat(beta_sigma', nvip, 1), ...
@@ -137,6 +137,6 @@ for t = 1:T-1
         RMExp_mat(T_index, :), RVExp_mat(T_index, :), vip_route);
     T_index = T_index + 1;
 end
-save data_0108.mat; 
+save data_0113.mat; 
 
 
