@@ -5,6 +5,7 @@ cd "/Users/sunnieshang/Dropbox/Research/KN_2/Stata Code"
 set memory 8g
 cd "/Users/sunnie/Desktop/Dropbox/Research/KN_2/Stata Code"
 set memory 2g 
+cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/Stata Code"
 
 ///%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 foreach i in 01 02 03 04 05 06 07 08 09 10 11 12{
@@ -794,20 +795,107 @@ save consignee_code.dta, replace //now reduce 148,923->135,664, 91.1%
 outsheet using "consignee_code.csv", comma replace
 */
 
+//%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+// 01-18-2016 Need to replace shipper name with the new shipper name in 
+// order to do the following things with shipper names
+///%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+cd "/Users/sunnieshang/Documents/Research & Data/KN/Mom Cleaned Data"
+foreach i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20{
+	clear
+	insheet using "shipper_edit`i'.csv", delimiter(",")
+	tostring parentcompany, replace force
+	tostring new_shipper, replace force
+	save shipper_edit`i', replace
+}
+clear
+
+cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/Stata Code"
+clear
+use shipper_edit1.dta
+foreach i in 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20{
+	append using shipper_edit`i'.dta
+}
+compress
+replace childcompany = "STL TECHNOLOGY CO LTD" in 2193
+replace childcompany = "VIA TECHNOLOGIES" in 2259
+replace childcompany = "KONE INDUSTRIAL" in 3074
+replace childcompany = "KONE INDUSTRIAL" in 3075
+replace childcompany = "SAMSUNG ELECTRONICS" in 3644
+replace childcompany = "SAMSUNG ELECTRONICS" in 3645
+replace childcompany = "SAMSUNG ELECTRONICS" in 3646
+replace childcompany = "OKINS ELECTRONICS" in 3604
+replace childcompany = "OKINS ELECTRONICS LTD" in 3604
+replace childcompany = "MEDER ELECTRONIC" in 3580
+replace childcompany = "MEDER ELECTRONIC" in 3581
+replace childcompany = "MEDER ELECTRONIC AG" in 3580
+replace childcompany = "MEDER ELECTRONIC INC" in 3581
+replace childcompany = "ABB INDUSTRIES" in 2879
+replace childcompany = "ABB INDUSTRIES" in 2880
+replace childcompany = "ABB INDUSTRIES" in 2881
+replace childcompany = "ABB INDUSTRIES" in 2882
+replace childcompany = "" in 3770
+replace childcompany = "" in 3762
+replace childcompany = "AMRIT EXPORTS" in 9023
+replace childcompany = "AMRIT EXPORTS" in 9022
+
+foreach i in new_shipper childcompany parentcompany{
+	replace `i'=trim(`i')
+	replace `i'="" if `i'=="."
+}
+bysort new_shipper: keep if _n==1
+rename childcompany shipper_childcompany
+rename parentcompany shipper_parentcompany
+rename group shipper_group
+replace shipper_childcompany = strupper(shipper_childcompany)
+replace shipper_parentcompany = strupper(shipper_parentcompany)
+replace new_shipper = strupper(new_shipper)
+replace shipper_name = strupper(shipper_name)
+save shipper_edit.dta, replace
+// From here to line 858
+//%%%%%%%%%%%%%%% Post Data Clean %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+/*
+use shipper_edit, clear
+rename plan_from_place plan_to_place
+rename shipper_name consignee_name
+rename from_country to_country
+rename shipper_size consignee_size
+rename new_shipper new_consignee
+rename group_shipper group_consignee
+rename shipper_childcompany consignee_childcompany
+rename shipper_parentcompany consignee_parentcompany
+rename shipper_group consignee_group
+save consignee_edit.dta, replace */
+// %%%%%%%%%%%%%%% Merge Shipper Names %%%%%%%%%%%%%
 clear
 use map_inuse
 replace plan_from_place=subinstr(plan_from_place,"-"," ",.) 
 gen from_country=word(plan_from_place, 1)
 merge m:1 SHIPPER_NAME from_country using shipper_code
-keep if _merge==3
+rename SHIPPER_NAME shipper_name
+keep if _merge==3 // Drop <0.03% of the whole observations
 drop _merge
+merge m:1 new_shipper using shipper_edit
+keep if _merge==3 // Drop <0.05% of the whole observations
+drop _merge
+drop shipper_group group_shipper shipper_size
+// by sort new_shipper: gen multinational_comp=1 if _N>1
+// replace multinational_comp=0 if multinational>=.
+// Decide to use parentcompany as the company name
+gen shipper_merge_parent = shipper_parentcompany
+replace shipper_merge_parent = shipper_childcompany if shipper_merge_parent=="" & shipper_childcompany!=""
+replace shipper_merge_parent = new_shipper if shipper_merge_parent=="" //from 80,973 to 54,273 shippers
+bysort shipper_merge_parent: gen shipper_mp_size = sum(1)
+by shipper_merge_parent: replace shipper_mp_size = shipper_mp_size[_N]
+gen shipper_merge_child = shipper_merge_parent + " " + from_country 
+
 replace plan_to_place=subinstr(plan_to_place,"-"," ",.) 
 gen to_country=word(plan_to_place, 1)
 merge m:1 CONSIGNEE_NAME to_country using consignee_code
-keep if _merge==3 //1,399,276
-drop _merge
+keep if _merge==3
+drop _merge //drop 0.04%, have 1,398,638 left
+drop consignee_size
 
-drop exception* CONSIGNEE_NAME SHIPPER_NAME
+drop exception* CONSIGNEE_NAME shipper_name
 drop AWB* a MODIFIED* CHANGE* ROUTE MBL HBL CONS_ID RMP rmp 
 
 gen start_time = time_1000
@@ -816,14 +904,14 @@ replace start_time = time_1080 - msofhours(50) if start_time>=.
 replace start_time = time_1220 - msofhours(25) if start_time>=.
 replace start_time = time_1240 - msofhours(20) if start_time>=.
 format start_time %tc
-drop if start_time>=. //471
+drop if start_time>=. //
 
 gen start_week = wofd(dofc(start_time))
-drop if start_week > yw(2013,52)  | start_week < yw(2013,1) //15,700
+drop if start_week > yw(2013,52)  | start_week < yw(2013,1) //1%
 replace start_week = week(dofc(start_time))
-bysort new_shipper: egen min_start_week=min(start_week)
-drop if min_start_week>9 //164,063
-drop min_start_week
+// bysort shipper_merge_child: egen min_start_week=min(start_week)
+// drop if min_start_week>9 //10.6% of all the shipments
+// drop min_start_week
 gen final_time=time_3000
 replace final_time=time_2300 if final_time>=.
 replace final_time=time_2210 if final_time>=.
@@ -840,12 +928,12 @@ replace final_time=time_1300_2+msofhours(54) if plan_num_connect==1 & final_time
 replace final_time=time_1405_1+msofhours(48) if plan_num_connect==0 & final_time>=. 
 replace final_time=time_1400_1+msofhours(48) if plan_num_connect==0 & final_time>=. 
 replace final_time=time_1300_1+msofhours(54) if plan_num_connect==0 & final_time>=. 
-drop if final_time>=. //1,065
+drop if final_time>=. //0.1%
 format final_time %tc
 gen complete_week = wofd(dofc(final_time))
 drop if complete_week < yw(2013,1)  
 replace complete_week = week(dofc(final_time))
-drop if start_week > complete_week //5751
+drop if start_week > complete_week //0.4%
 drop time* REPORT plan_exception*
 
 gen delay=delay_3000
@@ -864,65 +952,112 @@ replace delay=delay_1405_1 if plan_num_connect==0 & delay>=.
 replace delay=delay_1400_1 if plan_num_connect==0 & delay>=.
 replace delay=delay_1300_1 if plan_num_connect==0 & delay>=.
 drop if delay>=. //1739
-bysort new_shipper: egen min_start_week=min(start_week)
-drop if min_start_week>9 //113
-drop min_start_week
-bysort new_shipper: egen min_complete_week=min(complete_week)
-drop if min_complete_week>13 //113
-drop min_complete_week
+// bysort shipper_merge_child: egen min_start_week=min(start_week)
+// drop if min_start_week>9 
+// drop min_start_week
+// bysort shipper_merge_child: egen min_complete_week=min(complete_week)
+// drop if min_complete_week>13 
+// drop min_complete_week
 drop plan*
 gen early=-delay
 replace delay=0 if delay < 0
 replace early=0 if early < 0
 drop delay_*
-egen shipper_id=group(new_shipper)
-save map_inuse2.dta, replace //1,210,111 shipments; 34,926 shippers
+egen child_id=group(shipper_merge_child)
+
+bysort child_id FROM_LOCATION TO_LOCATION (start_time final_time): gen aggreg = 1 if ///
+    _n>1 & (start_time[_n-1] >= start_time[_n] - msofhours(72) | final_time[_n-1] >= final_time[_n] - msofhours(72))
+    
+by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace VOLUME = VOLUME + VOLUME[_n-1] if ///
+    aggreg == 1
+by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace PACKAGE = PACKAGE + PACKAGE[_n-1] if ///
+    aggreg == 1
+by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace WEIGHT = WEIGHT + WEIGHT[_n-1] if ///
+    aggreg == 1 
+
+by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace delay = delay + delay[_n-1] if ///
+    aggreg == 1 
+
+by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace early = early + early[_n-1] if ///
+    aggreg == 1 
+by child_id FROM_LOCATION TO_LOCATION (start_time final_time): drop if _n<_N & aggreg[_n+1] == 1  
+drop aggreg  
+save map_inuse_child.dta, replace 
+//759,768 shipments; 67,515 parent shippers; 89,821 child shippers
 
 //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
-use map_inuse2.dta, clear
-bysort shipper_id complete_week:  gen complete_ship    = 1
-bysort shipper_id complete_week:  gen complete_shipnum = _N
-bysort shipper_id complete_week: egen complete_shipvlm = sum(VOLUME)
+use map_inuse_child.dta, clear
+gen start_period = ceil((dofc(start_time) - td(31dec2012))/3)
+gen complete_period = ceil((dofc(final_time) - td(31dec2012))/3)
+bysort child_id start_period: gen ship_this_period = 1 if _n==1
+by child_id: egen total_period = sum(ship_this_period)
+// 120 periods in total; keep period between 10% ~ 50%, thus 12 ~ 60 periods
+// by shipments: 1~11: 23%; 12~60: 41%; >60: 35%.
+// by shippers: 1~11: 88%; 12~60: 11%; >60: 1.4%
+drop if total_period < 12 | total_period>60
+drop ship_this_period
+bysort child_id complete_period:  gen complete_ship    = 1
+by child_id complete_period: egen complete_shipvlm = sum(VOLUME)
 gen    complete_log_shipvlm = log(1+complete_shipvlm) 
-bysort shipper_id complete_week: egen complete_shippkg = sum(PACKAGE)
-bysort shipper_id complete_week: egen complete_shipwgt = sum(WEIGHT)
-foreach i in delay early{
-	bysort shipper_id complete_week: egen ttl_`i' = sum(`i')
+by child_id complete_period: egen complete_shippkg = sum(PACKAGE)
+by child_id complete_period: egen complete_shipwgt = sum(WEIGHT)
+// foreach i in delay early{
+//   by child_id complete_period: egen ttl_`i' = sum(`i')
+// }
+bysort child_id start_period: gen period_size = _N 
+by child_id: gen total_size=_N
+drop if total_size > 92
+// by shippers: 50% 23, 75% 37, 95% 70, 99% 92
+// by shipments: 50% 35; 75% 56; 95% 89; 99% 180
+bysort child_id FROM_LOCATION TO_LOCATION: gen route_id = 1 if _n==1
+by child_id: replace route_id = sum(route_id)
+by child_id: gen child_route_num = route_id[_N]
+// by shipper: 1: 18%; 2~10: 66%; 10+: 16%
+drop if child_route_num > 10
+sort child_id start_period complete_period FROM_LOCATION TO_LOCATION
+foreach i in FROM_LOCATION TO_LOCATION{
+	replace `i'=trim(`i')
+	replace `i'="" if `i'=="."
 }
-bysort shipper_id complete_week: gen size = _N
-bysort shipper_id complete_week: keep if _n==1
+save map_inuse_child2.dta, replace 
+// 7,070 parent, 8,156 child, 208,820 shipments
+// 90.5% of the child_id start_week has only 1 shipment, 8.5% 2; 1% 2+  
+
+
+//%%%%%%%%%%%%%%%%%%%%%%%%% Route ID for each Shipper %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+/*
 foreach i in delay early{
-	bysort shipper_id (complete_week): gen sofar_ttl_`i' = sum(ttl_`i')
+	bysort child_id (complete_week): gen sofar_ttl_`i' = sum(ttl_`i')
 }
-bysort shipper_id (complete_week): replace size=sum(size)
+
 foreach i in delay early{
-	bysort shipper_id (complete_week): gen sofar_ave_`i' = sofar_ttl_`i'/size
+	bysort child_id (complete_week): gen sofar_ave_`i' = sofar_ttl_`i'/size
 }
-keep shipper_id complete* ttl* sofar* size
+keep child_id complete* ttl* sofar* size
 rename complete_week week
 save complete_week.dta, replace
 
-use map_inuse2.dta, clear
-bysort shipper_id start_week:  gen start_ship    = 1
-bysort shipper_id start_week:  gen start_shipnum = _N
-bysort shipper_id start_week: egen start_shipvlm = sum(VOLUME)
+use map_inuse_child.dta, clear
+bysort child_id start_week:  gen start_ship    = 1
+bysort child_id start_week:  gen start_shipnum = _N
+bysort child_id start_week: egen start_shipvlm = sum(VOLUME)
 gen    start_log_shipvlm = log(1+start_shipvlm) 
-bysort shipper_id start_week: egen start_shippkg = sum(PACKAGE)
-bysort shipper_id start_week: egen start_shipwgt = sum(WEIGHT)
+bysort child_id start_week: egen start_shippkg = sum(PACKAGE)
+bysort child_id start_week: egen start_shipwgt = sum(WEIGHT)
 rename start_week week
-bysort shipper_id week: keep if _n==1
-merge 1:1 shipper_id week using complete_week
+bysort child_id week: keep if _n==1
+merge 1:1 child_id week using complete_week
 drop _merge
-xtset shipper_id week
+xtset child_id week
 tsfill, full
 foreach i in ship shipnum log_shipvlm shipvlm shippkg shipwgt{
 	replace start_`i'=0 if start_`i'>=.
 	replace complete_`i'=0 if complete_`i'>=.
 }
 drop complete_week
-bysort shipper_id: egen complete_week = min(week) if complete_ship>0
-bysort shipper_id (complete_week): replace complete_week = complete_week[1]
+bysort child_id: egen complete_week = min(week) if complete_ship>0
+bysort child_id (complete_week): replace complete_week = complete_week[1]
 drop if week < complete_week
 drop KN_COM_REF IS_CARRIER_MUP SHIPMENT_DESCRIPTION_CODE C2K_ROUTE_MAP_HDR_ID ///
 CARRIER_CODE COM_COUNTER PRODUCT_CODE IATA_OFFICE_CODE PACKAGES WEIGHT_KG VOLUME_CBM ///
@@ -930,10 +1065,10 @@ FROM_LOCATION TO_LOCATION DELIVERY_LOCATION SHIPMENT_TYPE DELIVERY_TERM ///
 EXPORT_GATEWAY_BRANCH_CODE EXPORT_GATEWAY_DEP_CODE GATEWAY_IMP_LOCATION PICKUP_ZONE ///
 DELIVERY_ZONE SENDER KN_SERVICE_LEVEL ORIGIN_LOCATION change_route from_country ///
 start_time final_time complete_week delay early to_country complete_week
-sort shipper_id week
+sort child_id week
 foreach i in delay early{
 	foreach j in ttl ave{
-		bysort shipper_id: carryforward sofar_`j'_`i', replace
+		bysort child_id: carryforward sofar_`j'_`i', replace
 	}
 }
 foreach i in ave_delay ave_early{
@@ -941,7 +1076,7 @@ foreach i in ave_delay ave_early{
 	gen sofar_`i'2 = (sofar_`i'-mean_`i')^2
 }
 drop mean*
-save map_inuse3.dta, replace 
+save map_inuse_child2.dta, replace 
 
 //Exploratoray analysis: regressions
 use map_inuse3.dta, clear
@@ -964,11 +1099,11 @@ twoway scatter start_log_shipvlm sofar_ave_delay_l1 if sofar_ave_delay_l1<50, //
 	msymbol(point) mcolor(black)
 
 twoway scatter start_log_shipvlm ttl_early_sofar_l1 if ttl_early_sofar_l1<450, ///
-	msymbol(point) mcolor(black)
+	msymbol(point) mcolor(black) */
 	
 //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
-
-use shipper_code,clear
+//&&& Generate Date for Mom to Clean &&&&&&&&&&&&&&&
+use shipper_code, clear
 bysort new_shipper: replace shipper_size=sum(shipper_size)
 by new_shipper: keep if _n==1
 strgroup new_shipper, gen(group_shipper) threshold(0.2) force
@@ -986,21 +1121,6 @@ forval i = 1/20 {
 	outsheet using shipper_edit`i'.csv, comma replace
 	restore, preserve 
 }
-
-
-
-
-
-use shipper_code, clear
-merge new_shipper m:n using shipper_edit
-replace new_shipper = child_company if child_company!=рс
-bysort new_shipper from_country: replace shipper_size=sum(shipper_size)
-by new_shipper from_country: keep if _n==_N
-replace child_company = new_shipper+ р р +from_country
-replace parent_company = new_shipper if parent_company!=рс 
-by sort new_shipper: gen multinational_comp=1 if _N>1
-replace multinational_comp=0 if multinational>=.
-
 
 //&&&& Spider Test Data &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 use map_inuse.dta, clear
@@ -1203,4 +1323,46 @@ forval i = 1/20 {
 	restore, preserve 
 }
 
+//&&&&&&&&&&&&&&&&&&&&&&&&&& Recover Price Data &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/worldfreightrates"
+foreach i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20{
+	clear
+	insheet using "output`i'.csv", delimiter(",")
+	destring weight_kg, replace force
+	destring width, replace force
+	destring length, replace force
+	destring height, replace force
+	save output`i', replace
+}
+clear
 
+cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/Stata Code"
+clear
+use output1.dta
+foreach i in 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20{
+	append using output`i'.dta
+}
+drop v1* v2*
+foreach i in to_location distance from_location max_rate rate time min_rate{
+	replace `i'=trim(`i')
+}
+replace from_location = substr(from_location, -4, 3) if substr(from_location, -1, 1) == ")"
+replace to_location = substr(to_location, -4, 3) if substr(to_location, -1, 1) == ")"
+replace distance=trim(subinstr(distance," Km","",.)) 
+replace distance=trim(subinstr(distance,",","",.)) 
+destring distance, replace
+
+replace rate=trim(subinstr(rate," contact carrier","",.)) 
+replace rate=trim(subinstr(rate,",","",.)) 
+
+replace time=trim(subinstr(time," Hrs","",.)) 
+replace time=trim(subinstr(time,",","",.)) 
+replace time="" if time == "from_location"
+replace min_rate=trim(subinstr(min_rate,"$","",.)) 
+replace min_rate=trim(subinstr(min_rate,",","",.)) 
+replace max_rate=trim(subinstr(max_rate,"$","",.)) 
+replace max_rate=trim(subinstr(max_rate,",","",.)) 
+replace min_rate="" if min_rate == "max_rate"
+destring, replace
+compress
+save worldfreightrates.dta, replace

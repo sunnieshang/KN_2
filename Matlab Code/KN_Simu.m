@@ -1,6 +1,6 @@
 clc; clearvars; rng('shuffle'); 
-T = 52; 
-nvip = 20; 
+T = 100; 
+nvip = 200; 
 route_min = 2; 
 route_max = 4;
 pred_num = 1; 
@@ -77,7 +77,7 @@ end
 % gamma_mu    = normrnd(0.5, 1, [1, 1]);
 gamma_mu    = - 1.2; 
 % gamma_mu = 0; 
-gamma_sigma = 0.2; 
+gamma_sigma = 0.3; 
 % gamma_sigma = 0;
 gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
                       gamma_sigma, ...
@@ -91,7 +91,7 @@ gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
 % lambda = ones(nvip, 1); 
 
 beta_mu     = [-0.4; -0.25]; 
-beta_sigma  = [0.07; 0.05];
+beta_sigma  = [0.1; 0.08];
 % beta_sigma  = [0; 0];
 beta        = normrnd(repmat(beta_mu', nvip, 1), ...
                       repmat(beta_sigma', nvip, 1), ...
