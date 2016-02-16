@@ -17,4 +17,3 @@ function [ID_mat, P_mat, S_mat] = KN_ID(vip_route_rate, T, vip_route)
     ID_mat(:, 4) = P_mat(sub2ind(size(P_mat), (1:nvip*T)', ID_mat(:,3)));    
     ID_mat(:, 5) = S_mat(sub2ind(size(S_mat), (1:nvip*T)', ID_mat(:,3)));
 end
-

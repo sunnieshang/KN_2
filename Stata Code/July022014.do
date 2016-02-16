@@ -5,6 +5,7 @@ cd "/Users/sunnieshang/Dropbox/Research/KN_2/Stata Code"
 set memory 8g
 cd "/Users/sunnie/Desktop/Dropbox/Research/KN_2/Stata Code"
 set memory 2g 
+set matsize 5000
 cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/Stata Code"
 
 ///%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -964,65 +965,146 @@ replace delay=0 if delay < 0
 replace early=0 if early < 0
 drop delay_*
 egen child_id=group(shipper_merge_child)
+gen number_of_shipments = 1
+gen chargeable_weight = VOLUME_CBM/6
+replace chargeable_weight = WEIGHT_KG if chargeable_weight < WEIGHT_KG
+save map_inuse.dta, replace
+
+use map_inuse.dta, clear
+bysort child_id FROM TO chargeable_weight start_time (final_time): drop if _n<_N & final_time[_n+1]<=final_time[_n]+msofhours(24)
+bysort child_id FROM TO (start_time final_time chargeable_weight): drop if ///
+    _n<_N & start_time[_n+1] <= start_time[_n] + msofhours(1) & final_time[_n+1] <= final_time[_n] + msofhours(24) & ///
+	chargeable_weight[_n+1]<=chargeable_weight[_n]*1.1 & chargeable_weight[_n+1]>=chargeable_weight[_n]*0.9
 
 bysort child_id FROM_LOCATION TO_LOCATION (start_time final_time): gen aggreg = 1 if ///
-    _n>1 & (start_time[_n-1] >= start_time[_n] - msofhours(72) | final_time[_n-1] >= final_time[_n] - msofhours(72))
+    _n>1 & start_time[_n-1] >= start_time[_n] - msofhours(3) & final_time[_n-1] >= final_time[_n] - msofhours(3) & ///
+	final_time[_n-1] <= final_time[_n] + msofhours(3)
     
 by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace VOLUME = VOLUME + VOLUME[_n-1] if ///
     aggreg == 1
-by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace PACKAGE = PACKAGE + PACKAGE[_n-1] if ///
-    aggreg == 1
 by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace WEIGHT = WEIGHT + WEIGHT[_n-1] if ///
-    aggreg == 1 
-
+    aggreg == 1
 by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace delay = delay + delay[_n-1] if ///
     aggreg == 1 
-
 by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace early = early + early[_n-1] if ///
     aggreg == 1 
+by child_id FROM_LOCATION TO_LOCATION (start_time final_time): replace number_of_shipments = number_of_shipments + number_of_shipments[_n-1] if ///
+    aggreg == 1	
 by child_id FROM_LOCATION TO_LOCATION (start_time final_time): drop if _n<_N & aggreg[_n+1] == 1  
 drop aggreg  
 save map_inuse_child.dta, replace 
-//759,768 shipments; 67,515 parent shippers; 89,821 child shippers
+//1,168,378 shipments; 67,515 parent shippers; 89,821 child shippers
 
 //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
 use map_inuse_child.dta, clear
+
 gen start_period = ceil((dofc(start_time) - td(31dec2012))/3)
 gen complete_period = ceil((dofc(final_time) - td(31dec2012))/3)
 bysort child_id start_period: gen ship_this_period = 1 if _n==1
 by child_id: egen total_period = sum(ship_this_period)
 // 120 periods in total; keep period between 10% ~ 50%, thus 12 ~ 60 periods
 // by shipments: 1~11: 23%; 12~60: 41%; >60: 35%.
-// by shippers: 1~11: 88%; 12~60: 11%; >60: 1.4%
-drop if total_period < 12 | total_period>60
+// by shippers: 1~11: 87%; 12~60: 11%; >60: 1.9%
+drop if total_period < 11 | total_period>60
 drop ship_this_period
-bysort child_id complete_period:  gen complete_ship    = 1
-by child_id complete_period: egen complete_shipvlm = sum(VOLUME)
-gen    complete_log_shipvlm = log(1+complete_shipvlm) 
-by child_id complete_period: egen complete_shippkg = sum(PACKAGE)
-by child_id complete_period: egen complete_shipwgt = sum(WEIGHT)
+// bysort child_id complete_period:  gen complete_ship    = 1
+bysort child_id start_period FROM TO: replace VOLUME = sum(VOLUME)
+bysort child_id start_period FROM TO: replace WEIGHT = sum(WEIGHT)
+bysort child_id start_period FROM TO: replace number_of_shipment = sum(number_of_shipment)
+bysort child_id start_period FROM TO: keep if _n==_N
+
+// bysort child_id complete_period: egen complete_shipvlm = sum(VOLUME)
+// gen    complete_log_shipvlm = log(1+complete_shipvlm) 
+// by child_id complete_period: egen complete_shippkg = sum(PACKAGE)
+// by child_id complete_period: egen complete_shipwgt = sum(WEIGHT)
 // foreach i in delay early{
 //   by child_id complete_period: egen ttl_`i' = sum(`i')
 // }
 bysort child_id start_period: gen period_size = _N 
+bysort child_id: egen mean_period_size = mean(period_size)
+drop if mean_period_size > 2 // drop 3% of shippers
 by child_id: gen total_size=_N
-drop if total_size > 92
-// by shippers: 50% 23, 75% 37, 95% 70, 99% 92
-// by shipments: 50% 35; 75% 56; 95% 89; 99% 180
-bysort child_id FROM_LOCATION TO_LOCATION: gen route_id = 1 if _n==1
-by child_id: replace route_id = sum(route_id)
-by child_id: gen child_route_num = route_id[_N]
-// by shipper: 1: 18%; 2~10: 66%; 10+: 16%
-drop if child_route_num > 10
+drop if total_size > 90 // drop 1% of shippers
+bysort child_id FROM TO: gen route_size = _N
+bysort child_id start_period (route_size): keep if _n==_N 
+//keep 1 route per period; above drop 10% of child_id+start_period
+
+
 sort child_id start_period complete_period FROM_LOCATION TO_LOCATION
 foreach i in FROM_LOCATION TO_LOCATION{
 	replace `i'=trim(`i')
 	replace `i'="" if `i'=="."
 }
-save map_inuse_child2.dta, replace 
-// 7,070 parent, 8,156 child, 208,820 shipments
-// 90.5% of the child_id start_week has only 1 shipment, 8.5% 2; 1% 2+  
+replace FROM = "US-JFK" if FROM == "US-NYC"
+replace TO = "CA-YYZ" if TO == "CA-YTO"
+replace TO = "IT-FCO" if TO == "IT-ROM"
+replace TO = "BR-GIG" if TO == "BR-RIO"
+replace TO = "US-DTW" if TO == "US-DTT"
+replace TO = "MA-CMN" if TO == "MA-CAS"
+replace TO = "IS-KEF" if TO == "IS-REK"
+bysort child_id FROM TO: gen route_id = 1 if _n==1
+by child_id: replace route_id = sum(route_id)
+by child_id: gen child_route_num = route_id[_N]
+drop if child_route_num > 10 | child_route_num == 1 //8% shippers
+gen iata_place = substr(FROM, 4, 3)
+merge m:1 iata_place using airport
+keep if _merge == 3
+rename continent from_continent
+rename iata_place from_airport
+rename latitude from_latitude
+rename longitude from_longitude
+drop _merge code DST timezone altitude icao country city name id
+gen iata_place = substr(TO, 4, 3)
+merge m:1 iata_place using airport
+keep if _merge == 3
+rename continent to_continent
+rename latitude to_latitude
+rename longitude to_longitude
+rename iata_place to_airport
+gen delta_phi = (to_latitude - from_latitude)/180*_pi
+gen delta_lambda = (to_longitude - from_longitude)/180*_pi
+gen a = sin(delta_phi/2)*sin(delta_phi/2) + ///
+    cos(from_latitude/180*_pi)*cos(to_latitude/180*_pi)*sin(delta_lambda/2)*sin(delta_lambda/2)
+gen c = 2 * asin(sqrt(a))
+gen distance = 6371*c
+drop to_latitude to_longitude from_latitude from_longitude delta* a c 
+drop _merge code DST timezone altitude icao country city name id 
+replace from_country = substr(FROM, 1, 2) //change here so that the airport can match with the IATA price
+replace to_country = substr(TO, 1, 2) //change from: 5% and only 22/208,817 of to.
+drop IS_CARRIER_MUP SHIPMENT_DESCRIPTION_CODE C2K_ROUTE_MAP_HDR_ID COM_COUNTER ///
+    PRODUCT_CODE IATA_OFFICE_CODE EXPORT_GATEWAY_BRANCH_CODE EXPORT_GATEWAY_DEP_CODE ///
+	GATEWAY_IMP_LOCATION PICKUP_ZONE DELIVERY_ZONE SENDER KN_SERVICE_LEVEL ///
+	ORIGIN_LOCATION change_route shipper_childcompany shipper_parentcompany ///
+	from_airport from_continent to_airport to_continent DELIVERY_LOCATION ///
+	SHIPMENT_TYPE start_week complete_week
+replace chargeable_weight = VOLUME_CBM/6
+replace chargeable_weight = WEIGHT_KG if chargeable_weight < WEIGHT_KG
+gen weight_break = "0-5"
+replace weight_break = "5-10" if chargeable_weight>5 & chargeable_weight<=10
+replace weight_break = "10-20" if chargeable_weight>10 & chargeable_weight<=20
+replace weight_break = "20-30" if chargeable_weight>20 & chargeable_weight<=30
+replace weight_break = "30-45" if chargeable_weight>30 & chargeable_weight<=45
+replace weight_break = "45-50" if chargeable_weight>45 & chargeable_weight<=50
+replace weight_break = "50-60" if chargeable_weight>50 & chargeable_weight<=60
+replace weight_break = "60-80" if chargeable_weight>60 & chargeable_weight<=80
+replace weight_break = "80-100" if chargeable_weight>80 & chargeable_weight<=100
+replace weight_break = "100-150" if chargeable_weight>100 & chargeable_weight<=150
+replace weight_break = "150-200" if chargeable_weight>150 & chargeable_weight<=200
+replace weight_break = "200-250" if chargeable_weight>200 & chargeable_weight<=250
+replace weight_break = "250-300" if chargeable_weight>250 & chargeable_weight<=300
+replace weight_break = "300-400" if chargeable_weight>300 & chargeable_weight<=400
+replace weight_break = "400-500" if chargeable_weight>400 & chargeable_weight<=500
+replace weight_break = "500-750" if chargeable_weight>500 & chargeable_weight<=750
+replace weight_break = "750-1000" if chargeable_weight>750 & chargeable_weight<=1000
+replace weight_break = "1000-1500" if chargeable_weight>1000 & chargeable_weight<=1500
+replace weight_break = "1500-2000" if chargeable_weight>1500 & chargeable_weight<=2000
+replace weight_break = "2000-3000" if chargeable_weight>2000 & chargeable_weight<=3000
+replace weight_break = "3000-5000" if chargeable_weight>3000 & chargeable_weight<=5000
+replace weight_break = "5000-10000" if chargeable_weight>5000 & chargeable_weight<=10000
+replace weight_break = "10000+" if chargeable_weight>10000 & chargeable_weight<.
+gen month = mofd(dofc(start_time)-td(31dec2012)) + 1
+saveold map_inuse_child2.dta, version(12) replace
 
 
 //%%%%%%%%%%%%%%%%%%%%%%%%% Route ID for each Shipper %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1323,6 +1405,99 @@ forval i = 1/20 {
 	restore, preserve 
 }
 
+// Additional Date Needed for Spider of WorldFreightRate (for missing countries) 2016-01
+use spider_input.dta, clear
+keep if from_country == "KR" | from_country == "LT" | from_country == "VN" | ///
+	to_country == "PW" 
+drop from_country to_country ORIGIN_LOCATION DELIVERY_ZONE ///
+	PICKUP_ZONE DELIVERY_TERM DELIVERY_LOCATION
+drop VOLUME
+gen height = 10
+gen width = 10
+gen length = 10
+replace WEIGHT=250 if WEIGHT>250
+bysort FROM TO WEIGHT: keep if _n==1
+order FROM TO WEIGHT length width height
+
+//sample 0.1
+gen index=runiform()
+sort index
+drop index
+gen Value = 1000*runiform()
+order FROM TO Value WEIGHT length width height
+outsheet using input21.csv, comma replace
+
+// &&&&&&&&&&&&Additional Data Needed for Spider of Worldfreightrates: for uncrawled data 2016-01 &&&&&&&&&&&&&&&&&&&&&&&&&&&
+cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/Stata Code"
+clear
+use output1.dta
+foreach i in 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20{
+	append using output`i'.dta
+}
+drop v1* v2*
+foreach i in to_location distance from_location max_rate rate time min_rate{
+	replace `i'=trim(`i')
+}
+replace from_location = substr(from_location, -4, 3) if substr(from_location, -1, 1) == ")"
+replace from_location = substr(from_location, -3, 3) if strlen(from_location)>3
+replace to_location = substr(to_location, -4, 3) if substr(to_location, -1, 1) == ")"
+replace to_location = substr(to_location, -3, 3) if strlen(to_location)>3
+keep if rate == ""
+drop if from_location == "ICN" | from_location == "VNO" | from_location == "SGN" | from_location == "HAN"
+replace from_location = "A-" + from_location
+replace to_location = "A-" + to_location
+rename from_location FROM_LOCATION
+rename to_location TO_LOCATION
+gen VALUE = 2000 * runiform()
+gen WEIGHT = 250 * runiform()
+replace WEIGHT = 250 if WEIGHT>250
+replace length = 10
+replace width = 10
+replace height = 10
+drop time min_rate max_rate rate distance weight value
+order FROM TO VALUE WEIGHT length width height
+gen index=runiform()
+sort index
+drop index
+gen group=ceil(_n/2000) + 21
+replace group=25 if group==26
+preserve 
+forval i = 22/25 {
+	keep if group == `i'
+	drop group
+	outsheet using input`i'.csv, comma replace
+	restore, preserve 
+}
+
+// &&&& Redo all the files 2016-01 &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+use spider_input.dta, clear
+drop from_country to_country ORIGIN_LOCATION DELIVERY_ZONE ///
+	PICKUP_ZONE DELIVERY_TERM DELIVERY_LOCATION
+drop VOLUME
+gen Value = 2000 * runiform()
+gen height = 10
+gen width = 10
+gen length = 10
+replace WEIGHT=250 * runiform()
+bysort FROM TO WEIGHT: keep if _n==1
+replace WEIGHT = 250 if WEIGHT>250
+order FROM TO WEIGHT length width height
+//sample 0.1
+gen index=runiform()
+sort index
+drop index
+order FROM TO Value WEIGHT length width height
+gen group=ceil(_n/2762)+25
+replace group=45 if group==46
+
+preserve 
+forval i = 26/45 {
+	keep if group == `i'
+	drop group
+	outsheet using input`i'.csv, comma replace
+	restore, preserve 
+}
+
 //&&&&&&&&&&&&&&&&&&&&&&&&&& Recover Price Data &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/worldfreightrates"
 foreach i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20{
@@ -1332,6 +1507,17 @@ foreach i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20{
 	destring width, replace force
 	destring length, replace force
 	destring height, replace force
+	save output`i', replace
+}
+foreach i in 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45{
+	clear
+	import delimited "output`i'.csv", varnames(1) encoding(ISO-8859-1)
+	destring weight_kg, replace force
+	destring width, replace force
+	destring length, replace force
+	destring height, replace force
+	drop if insured=="true" | insured=="insured"
+	drop insured
 	save output`i', replace
 }
 clear
@@ -1352,7 +1538,94 @@ replace distance=trim(subinstr(distance," Km","",.))
 replace distance=trim(subinstr(distance,",","",.)) 
 destring distance, replace
 
-replace rate=trim(subinstr(rate," contact carrier","",.)) 
+replace rate=trim(subinstr(rate,"contact carrier","",.)) 
+replace rate=trim(subinstr(rate,",","",.)) 
+
+replace time=trim(subinstr(time," Hrs","",.)) 
+replace time=trim(subinstr(time,",","",.)) 
+replace time="" if time == "from_location"
+replace min_rate=trim(subinstr(min_rate,"$","",.)) 
+replace min_rate=trim(subinstr(min_rate,",","",.)) 
+replace max_rate=trim(subinstr(max_rate,"$","",.)) 
+replace max_rate=trim(subinstr(max_rate,",","",.)) 
+replace min_rate="" if min_rate == "max_rate"
+drop if _n==962
+destring, replace
+compress
+sort from_location to_location
+drop if rate>=. & min_rate>=. & max_rate>=. //1/7 no rate data due to duplicity of the airport name
+rename to_location TO_LOCATION
+rename from_location FROM_LOCATION
+gen from_country = substr(FROM_LOCATION, 1, 2)
+gen to_country = substr(TO_LOCATION, 1, 2)
+order FROM_LOCATION from_country TO_LOCATION to_country distance time rate max_rate min_rate
+gen chargeable_weight = height*width*length/6000
+replace chargeable_weight = weight_kg if weight_kg>chargeable_weight
+drop width length height value weight_kg //all equals to 100cm
+gen weight_break = "0-5"
+replace weight_break = "5-10" if chargeable_weight>5 & chargeable_weight<=10
+replace weight_break = "10-20" if chargeable_weight>10 & chargeable_weight<=20
+replace weight_break = "20-30" if chargeable_weight>20 & chargeable_weight<=30
+replace weight_break = "30-45" if chargeable_weight>30 & chargeable_weight<=45
+replace weight_break = "45-50" if chargeable_weight>45 & chargeable_weight<=50
+replace weight_break = "50-60" if chargeable_weight>50 & chargeable_weight<=60
+replace weight_break = "60-80" if chargeable_weight>60 & chargeable_weight<=80
+replace weight_break = "80-100" if chargeable_weight>80 & chargeable_weight<=100
+replace weight_break = "100-150" if chargeable_weight>100 & chargeable_weight<=150
+replace weight_break = "150-200" if chargeable_weight>150 & chargeable_weight<=200
+replace weight_break = "200-250" if chargeable_weight>200 & chargeable_weight<=250
+replace weight_break = "250-300" if chargeable_weight>250 & chargeable_weight<=300
+replace weight_break = "300-400" if chargeable_weight>300 & chargeable_weight<=400
+replace weight_break = "400-500" if chargeable_weight>400 & chargeable_weight<=500
+replace weight_break = "500-750" if chargeable_weight>500 & chargeable_weight<=750
+replace weight_break = "750-1000" if chargeable_weight>750 & chargeable_weight<=1000
+replace weight_break = "1000-1500" if chargeable_weight>1000 & chargeable_weight<=1500
+replace weight_break = "1500-2000" if chargeable_weight>1500 & chargeable_weight<=2000
+replace weight_break = "2000-3000" if chargeable_weight>2000 & chargeable_weight<=3000
+replace weight_break = "3000-5000" if chargeable_weight>3000 & chargeable_weight<=5000
+replace weight_break = "5000-10000" if chargeable_weight>5000 & chargeable_weight<=10000
+replace weight_break = "10000+" if chargeable_weight>10000 & chargeable_weight<.
+gen month = 201409
+rename rate weight_other_charges_usd
+gen number_of_shipments = 1
+/* gen iata_place = substr(FROM, 4, 3)
+merge m:1 iata_place using airport
+keep if _merge == 3
+rename continent from_continent
+drop _merge code DST timezone latitude altitude longitude city icao country name id iata_place
+replace TO = "CA-YYZ" if TO == "CA-YTO"
+replace TO = "IT-FCO" if TO == "IT-ROM"
+replace TO = "BR-GIG" if TO == "BR-RIO"
+replace TO = "US-DTW" if TO == "US-DTT"
+replace TO = "MA-CMN" if TO == "MA-CAS"
+replace TO = "IS-KEF" if TO == "IS-REK"
+replace TO = "US-JFK" if TO == "US-NYC"
+replace TO = "JP-HND" if TO == "JP-TYO"
+replace TO = "AR-EZE" if TO == "AR-BUE"
+replace TO = "CA-YUL" if TO == "CA-YMQ"
+replace TO = "ES-TFS" if TO == "ES-TCI"
+gen iata_place = substr(TO, 4, 3)
+merge m:1 iata_place using airport
+keep if _merge == 3
+rename continent to_continent
+drop _merge code DST timezone latitude altitude longitude city icao country name id iata_place */
+save worldfreightrates.dta, replace
+
+//&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+use output21.dta, clear
+foreach i in 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45{
+    append using output`i'.dta
+}
+foreach i in to_location distance from_location max_rate rate time min_rate{
+	replace `i'=trim(`i')
+}
+replace from_location = substr(from_location, -4, 3) if substr(from_location, -1, 1) == ")"
+replace to_location = substr(to_location, -4, 3) if substr(to_location, -1, 1) == ")"
+replace distance=trim(subinstr(distance," Km","",.)) 
+replace distance=trim(subinstr(distance,",","",.)) 
+destring distance, replace
+
+replace rate=trim(subinstr(rate,"contact carrier","",.)) 
 replace rate=trim(subinstr(rate,",","",.)) 
 
 replace time=trim(subinstr(time," Hrs","",.)) 
@@ -1365,4 +1638,225 @@ replace max_rate=trim(subinstr(max_rate,",","",.))
 replace min_rate="" if min_rate == "max_rate"
 destring, replace
 compress
-save worldfreightrates.dta, replace
+sort from_location to_location
+drop if rate>=. & min_rate>=. & max_rate>=. //1/7 no rate data due to duplicity of the airport name
+rename to_location TO_LOCATION
+rename from_location FROM_LOCATION
+gen from_country = substr(FROM_LOCATION, 1, 2)
+gen to_country = substr(TO_LOCATION, 1, 2)
+order FROM_LOCATION from_country TO_LOCATION to_country distance time rate max_rate min_rate
+gen chargeable_weight = height*width*length/6000
+replace chargeable_weight = weight_kg if weight_kg>chargeable_weight
+drop width length height value weight_kg //all equals to 100cm
+gen weight_break = "0-5"
+replace weight_break = "5-10" if chargeable_weight>5 & chargeable_weight<=10
+replace weight_break = "10-20" if chargeable_weight>10 & chargeable_weight<=20
+replace weight_break = "20-30" if chargeable_weight>20 & chargeable_weight<=30
+replace weight_break = "30-45" if chargeable_weight>30 & chargeable_weight<=45
+replace weight_break = "45-50" if chargeable_weight>45 & chargeable_weight<=50
+replace weight_break = "50-60" if chargeable_weight>50 & chargeable_weight<=60
+replace weight_break = "60-80" if chargeable_weight>60 & chargeable_weight<=80
+replace weight_break = "80-100" if chargeable_weight>80 & chargeable_weight<=100
+replace weight_break = "100-150" if chargeable_weight>100 & chargeable_weight<=150
+replace weight_break = "150-200" if chargeable_weight>150 & chargeable_weight<=200
+replace weight_break = "200-250" if chargeable_weight>200 & chargeable_weight<=250
+replace weight_break = "250-300" if chargeable_weight>250 & chargeable_weight<=300
+replace weight_break = "300-400" if chargeable_weight>300 & chargeable_weight<=400
+replace weight_break = "400-500" if chargeable_weight>400 & chargeable_weight<=500
+replace weight_break = "500-750" if chargeable_weight>500 & chargeable_weight<=750
+replace weight_break = "750-1000" if chargeable_weight>750 & chargeable_weight<=1000
+replace weight_break = "1000-1500" if chargeable_weight>1000 & chargeable_weight<=1500
+replace weight_break = "1500-2000" if chargeable_weight>1500 & chargeable_weight<=2000
+replace weight_break = "2000-3000" if chargeable_weight>2000 & chargeable_weight<=3000
+replace weight_break = "3000-5000" if chargeable_weight>3000 & chargeable_weight<=5000
+replace weight_break = "5000-10000" if chargeable_weight>5000 & chargeable_weight<=10000
+replace weight_break = "10000+" if chargeable_weight>10000 & chargeable_weight<.
+gen month = 201601
+rename rate weight_other_charges_usd
+gen number_of_shipments = 1
+save worldfreightrates2.dta, replace
+
+//%%%%%%%%%%%%%%%%%%%%%%% IATA Price %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/Price from IATA"
+clear
+insheet using "KuhneUni_NL_DatasetTemplate_-_v31_NL_2013.csv", delimiter(",")
+rename monthyyyymm month
+rename origincountrycode from_country
+rename originairportcode from_airport
+rename destinationcountrycode to_country
+rename destinationairportcode to_airport
+rename agentheadofficename agent_head_office
+rename agentheadofficecode agent_head_office_code
+rename agentbranchofficename agent_branch_office
+rename agentbranchofficecode agent_branch_office_code
+rename airlinecode airline
+rename airlinename airline_name
+rename weightbreak weight_break
+rename chargeableweight number_of_shipments
+rename awb chargeable_weight
+rename weightchargesusd weight_charges_usd
+rename otherchargesusd other_charges_usd
+rename weightotherchargesusd weight_other_charges_usd
+gen FROM_LOCATION = from_country + "-" + from_airport
+gen TO_LOCATION = to_country + "-" + to_airport
+sort FROM_LOCATION TO_LOCATION month chargeable_weight
+destring, replace ignore(",")
+save IATA_lane_rate0.dta, replace
+
+cd "/Users/sunnieshang/Documents/Duke Study/Research/KN_2/Stata Code"
+//NOTE: all the distances in map_inuse_child2 and worldfreightrates are checked
+use airport, clear
+set obs 5408
+replace name = name[2844] in 5408
+replace city = city[2844] in 5408
+replace country = country[2844] in 5408
+replace continent = continent[2844] in 5408
+replace iata_place = "SPL" in 5408
+replace latitude = latitude[2844] in 5408
+replace longitude = longitude[2844] in 5408
+set obs 5409
+replace iata_place = "HOH" in 5409
+replace country = "Austria" in 5409
+replace longitude = 9.7 in 5409
+replace name = "Hohenems" in 5409
+save airport, replace
+
+//&&&&&&&&&&&&&&&&&&&& Calculate Distance for IATA Price &&&&&&&&&&&&&&&&&&&&&&&&
+use IATA_lane_rate0.dta, clear
+rename from_airport iata_place
+merge m:1 iata_place using airport
+keep if _merge == 3
+// rename continent from_continent
+rename iata_place from_airport
+rename latitude from_latitude
+rename longitude from_longitude
+drop _merge code DST timezone altitude icao country city name id continent
+replace TO = "US-JFK" if TO == "US-NYC"
+replace TO = "JP-HND" if TO == "JP-TYO"
+replace TO = "AR-EZE" if TO == "AR-BUE"
+replace TO = "US-DTW" if TO == "US-DTT"
+replace TO = "MA-CMN" if TO == "MA-CAS"
+replace TO = "BR-GIG" if TO == "BR-RIO"
+replace to_airport = substr(TO, 4, 3)
+rename to_airport iata_place
+merge m:1 iata_place using airport
+keep if _merge == 3
+// rename continent to_continent
+rename latitude to_latitude
+rename longitude to_longitude
+rename iata_place to_airport
+gen delta_phi = (to_latitude - from_latitude)/180*_pi
+gen delta_lambda = (to_longitude - from_longitude)/180*_pi
+gen a = sin(delta_phi/2)*sin(delta_phi/2) + ///
+    cos(from_latitude/180*_pi)*cos(to_latitude/180*_pi)*sin(delta_lambda/2)*sin(delta_lambda/2)
+gen c = 2 * asin(sqrt(a))
+gen distance = 6371*c
+drop to_latitude to_longitude from_latitude from_longitude delta* a c continent
+drop _merge code DST timezone altitude icao country city name id 
+save IATA_lane_rate.dta, replace
+
+use IATA_lane_rate.dta, clear
+xi: reg weight_other_charges_usd distance chargeable_weight number_of_shipments ///
+    i.from_country i.to_country i.month i.weight_break
+
+
+//&&&&&&&&&&&& Merge IATA Price with Worldfreightrate Price &&&&&&&&&&&&&&&&&&&&&&&&
+
+use IATA_lane_rate, clear
+append using worldfreightrates.dta
+append using worldfreightrates2.dta
+compress
+saveold shipping_price.dta, version(11) replace
+xi: reg weight_other_charges_usd distance i.weight_break##c.chargeable_weight ///
+    i.number_of_shipments  i.from_country i.to_country i.month
+
+//&&&&&&&&&&&&&&&&&&&&& Fill in Route for Missing Periods &&&&&&&&&&&&&&&&&&&&&&&&&&
+use map_inuse_child2.dta, clear
+drop child_id child_route_num route_id
+egen child_id=group(shipper_merge_child)
+bysort child_id FROM TO: gen route_id = 1 if _n==1
+by child_id: replace route_id = sum(route_id)
+by child_id: gen child_route_num = route_id[_N]
+drop if child_route_num == 1
+
+drop PACKAGES WEIGHT_KG VOLUME_CBM DELIVERY_TERM new_shipper shipper_merge_parent ///
+    shipper_mp_size total_period period_size mean_period_size total_size ///
+	route_size KN_COM_REF start_time final_time FROM TO new_consignee shipper_merge_child
+xtset child_id start_period
+tsfill, full
+gen start_day = td(01jan2013) + 3*(start_period-1)
+format start_day %td
+replace month = mofd(start_day-td(01jan2013)) + 1 
+drop start_day
+
+replace from_country = "GE" if from_country == "AZ"
+replace from_country = "TH" if from_country == "VN"
+replace to_country = "PH" if to_country == "PW"
+forval x = 1/10 {
+	bysort child_id route_id: gen to_country_`x' = to_country if route_id==`x'
+	bysort child_id route_id: gen distance_`x' = distance if route_id==`x'
+	bysort child_id (to_country_`x'): replace to_country_`x' = to_country_`x'[_N]
+	bysort child_id (distance_`x'): replace distance_`x' = distance_`x'[1]
+}
+drop from_country to_country distance
+gen ship = 1 if route_id < .
+replace ship = 0 if ship!=1
+bysort child_id: egen m_weight = median(chargeable_weight)
+bysort child_id: replace number_of_shipments = 1 if number_of_shipments >=.
+bysort child_id: replace chargeable_weight = m_weight if chargeable_weight >= .
+drop m_weight
+replace weight_break = "0-5" if chargeable_weight>=0 & chargeable_weight<=5
+replace weight_break = "5-10" if chargeable_weight>5 & chargeable_weight<=10
+replace weight_break = "10-20" if chargeable_weight>10 & chargeable_weight<=20
+replace weight_break = "20-30" if chargeable_weight>20 & chargeable_weight<=30
+replace weight_break = "30-45" if chargeable_weight>30 & chargeable_weight<=45
+replace weight_break = "45-50" if chargeable_weight>45 & chargeable_weight<=50
+replace weight_break = "50-60" if chargeable_weight>50 & chargeable_weight<=60
+replace weight_break = "60-80" if chargeable_weight>60 & chargeable_weight<=80
+replace weight_break = "80-100" if chargeable_weight>80 & chargeable_weight<=100
+replace weight_break = "100-150" if chargeable_weight>100 & chargeable_weight<=150
+replace weight_break = "150-200" if chargeable_weight>150 & chargeable_weight<=200
+replace weight_break = "200-250" if chargeable_weight>200 & chargeable_weight<=250
+replace weight_break = "250-300" if chargeable_weight>250 & chargeable_weight<=300
+replace weight_break = "300-400" if chargeable_weight>300 & chargeable_weight<=400
+replace weight_break = "400-500" if chargeable_weight>400 & chargeable_weight<=500
+replace weight_break = "500-750" if chargeable_weight>500 & chargeable_weight<=750
+replace weight_break = "750-1000" if chargeable_weight>750 & chargeable_weight<=1000
+replace weight_break = "1000-1500" if chargeable_weight>1000 & chargeable_weight<=1500
+replace weight_break = "1500-2000" if chargeable_weight>1500 & chargeable_weight<=2000
+replace weight_break = "2000-3000" if chargeable_weight>2000 & chargeable_weight<=3000
+replace weight_break = "3000-5000" if chargeable_weight>3000 & chargeable_weight<=5000
+replace weight_break = "5000-10000" if chargeable_weight>5000 & chargeable_weight<=10000
+replace weight_break = "10000+" if chargeable_weight>10000 & chargeable_weight<.
+// egen carrier_code = group(CARRIER_CODE)
+saveold map_inuse_child3.dta, version(12) replace
+
+use map_inuse_child3.dta, clear
+keep delay early early start_period complete_period child_id route_id child_route_num
+keep if complete_period<.
+replace delay = delay-early
+drop early
+forval i = 1/7{
+    bysort child_id complete_period: gen delay_`i' = delay if _n==`i'
+	bysort child_id complete_period: gen route_`i' = route_id if _n==`i'
+	bysort child_id (delay_`i'): replace delay_`i' = delay_`i'[1]
+	bysort child_id (route_`i'): replace route_`i' = route_`i'[1]
+}
+drop delay route_id
+bysort child_id complete_period: keep if _n==_N
+xtset child_id complete_period
+tsfill, full
+gen complete = 1 if child_route_num<.
+replace complete = 0 if complete>=.
+drop start_period child_route_num
+order child_id complete_period 
+saveold Exp_mat.dta, version(12) replace
+outsheet using "Exp_mat.csv", comma replace
+
+use map_inuse_child3.dta, clear
+keep child_id child_route_num
+keep if child_route_num<.
+bysort child_id: keep if _n==1
+drop child_id
+outsheet using "Child_Route_Num.csv", replace
+
