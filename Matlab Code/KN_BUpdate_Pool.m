@@ -2,7 +2,7 @@ function [MExp_mat, ...
           VExp_mat, ...
           NPrior_mat, ...
           MExp_mat_95, ...
-          VExp_mat_95, LL, DIC] = KN_BUpdate(T_index, ...
+          VExp_mat_95, LL, DIC] = KN_BUpdate_Pool(T_index, ...
                                     Complete_mat, ...
                                     Prior_mat, ...
                                     MExp_mat, ...
@@ -14,7 +14,7 @@ function [MExp_mat, ...
 % Note from Andres: need to make sure the samplers are converged
 %% Parameter initialization
 ID = unique(Complete_mat(Complete_mat(:, 2)==T_index(1), 1));
-LL = 0;DIC = 0;
+LL = 0; DIC = 0;
 if ~isempty(ID)
     iter = 1000; 
     burnin = 500; 
@@ -24,7 +24,8 @@ if ~isempty(ID)
     PMExp_mat = MExp_mat(ID, :);
     PVExp_mat = VExp_mat(ID, :);
     PNPrior_mat = NPrior_mat(ID, :);
-    nLL = zeros(length(ID), 1);nDIC = zeros(length(ID), 1);
+    nLL = zeros(length(ID), 1);
+    nDIC = zeros(length(ID), 1);
     parfor i = 1: length(ID)
         %% Priors 
         id = ID(i);
@@ -55,10 +56,10 @@ if ~isempty(ID)
             conti_mat = Complete_mat(Complete_mat(:, 1)==id & Complete_mat(:, 2) <= t, 5);
             n_continuous = 1;
         end       
-        n_obs = zeros(1, Vip_route(ID(i)));
-        for j = 1: Vip_route(ID(i))
-            n_obs(j) = sum(categ_mat == j);
-        end
+%         n_obs = zeros(1, Vip_route(ID(i)));
+%         for j = 1: Vip_route(ID(i))
+%             n_obs(j) = sum(categ_mat == j);
+%         end
         N = length(y);
         %% Using the last expectation as starting point to reduce burnin    
         mu = zeros(iter, Vip_route(ID(i)) + n_continuous);
@@ -84,17 +85,17 @@ if ~isempty(ID)
             % TODO: if the # of categorial predictors increases, should
             % iterate the following part, change variables including n_obs            
             % Update nu, hyperparameter of mu_i
-            n_kappa(t) = f_post_xi(sum(n_obs ~= 0), kappa, nu_phi(t-1));
-            mid_nu = sum(mu(t-1, 1: end-n_continuous).*(n_obs>0));
-            n_zeta(t) = f_post_nu(n_kappa(t), kappa, nu_phi(t-1), mid_nu, zeta);
-            nu(t) = normrnd(n_zeta(t), 1 ./ sqrt(n_kappa(t))); % updates of the parameters of focal interests
+%             n_kappa(t) = f_post_xi(sum(n_obs ~= 0), kappa, nu_phi(t-1));
+%             mid_nu = sum(mu(t-1, 1: end-n_continuous).*(n_obs>0));
+%             n_zeta(t) = f_post_nu(n_kappa(t), kappa, nu_phi(t-1), mid_nu, zeta);
+%             nu(t) = normrnd(n_zeta(t), 1 ./ sqrt(n_kappa(t))); % updates of the parameters of focal interests
             
             % Update nu_phi (xi in the paper)
-            mid_nu = nu(t) - mu(t-1, 1: Vip_route(ID(i)));
-            mid_nu = mid_nu .* (n_obs>0);
-            n_nu_phi_a(t) = nu_phi_a + sum(n_obs>0)/2;
-            n_nu_phi_b(t) = nu_phi_b + sum(mid_nu.^2)/2; 
-            nu_phi(t) = f_update_phi(n_nu_phi_a(t), n_nu_phi_b(t));
+%             mid_nu = nu(t) - mu(t-1, 1: Vip_route(ID(i)));
+%             mid_nu = mid_nu .* (n_obs>0);
+%             n_nu_phi_a(t) = nu_phi_a + sum(n_obs>0)/2;
+%             n_nu_phi_b(t) = nu_phi_b + sum(mid_nu.^2)/2; 
+%             nu_phi(t) = f_update_phi(n_nu_phi_a(t), n_nu_phi_b(t));
                         
             % Update mu_i of each route   
             if n_continuous > 0
@@ -102,14 +103,16 @@ if ~isempty(ID)
             else
                 alpha = y;
             end              
-            post_phi = f_post_xi(n_obs, nu_phi(t), phi(t-1)); 
-            mid_categ = zeros(1, Vip_route(ID(i)));
-            for j = 1: Vip_route(ID(i))
-                mid_categ(j) = sum(alpha(categ_mat == j));
-            end
+            post_phi = f_post_xi(N, kappa, phi(t-1)); 
+%             mid_categ = zeros(1, Vip_route(ID(i)));
+%             for j = 1: Vip_route(ID(i))
+%                 mid_categ(j) = sum(alpha(categ_mat == j));
+%             end
             post_mu = ...
-                f_post_nu(post_phi, nu_phi(t), phi(t-1), mid_categ, nu(t));
-            mu(t, 1: Vip_route(ID(i))) = normrnd(post_mu, 1 ./ sqrt(post_phi));
+                f_post_nu(post_phi, kappa, phi(t-1), sum(alpha), zeta);
+            mu(t, 1: Vip_route(ID(i))) = repmat(normrnd(post_mu, 1 ./ sqrt(post_phi)), 1, Vip_route(ID(i)));
+            n_zeta(t) = post_mu;
+            n_kappa(t) = post_phi;
             alpha = y - mu(t, categ_mat)';  
 
             % Update beta, coefficients of continuous predictors

@@ -998,39 +998,39 @@ save map_inuse_child.dta, replace
 //&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
 use map_inuse_child.dta, clear
-
-gen start_period = ceil((dofc(start_time) - td(31dec2012))/3)
-gen complete_period = ceil((dofc(final_time) - td(31dec2012))/3)
-bysort child_id start_period: gen ship_this_period = 1 if _n==1
-by child_id: egen total_period = sum(ship_this_period)
-// 120 periods in total; keep period between 10% ~ 50%, thus 12 ~ 60 periods
-// by shipments: 1~11: 23%; 12~60: 41%; >60: 35%.
-// by shippers: 1~11: 87%; 12~60: 11%; >60: 1.9%
-drop if total_period < 11 | total_period>60
-drop ship_this_period
-// bysort child_id complete_period:  gen complete_ship    = 1
+gen start_period = ceil((start_time - tc(03jan2013 12:00:00))/msofhours(3.5*24))
+drop if start_period == 0
+gen complete_period = ceil((final_time - tc(03jan2013 12:00:00))/msofhours(3.5*24))
+drop if complete_period == 0
 bysort child_id start_period FROM TO: replace VOLUME = sum(VOLUME)
 bysort child_id start_period FROM TO: replace WEIGHT = sum(WEIGHT)
 bysort child_id start_period FROM TO: replace number_of_shipment = sum(number_of_shipment)
-bysort child_id start_period FROM TO: keep if _n==_N
-
-// bysort child_id complete_period: egen complete_shipvlm = sum(VOLUME)
-// gen    complete_log_shipvlm = log(1+complete_shipvlm) 
-// by child_id complete_period: egen complete_shippkg = sum(PACKAGE)
-// by child_id complete_period: egen complete_shipwgt = sum(WEIGHT)
-// foreach i in delay early{
-//   by child_id complete_period: egen ttl_`i' = sum(`i')
-// }
+bysort child_id start_period FROM TO: keep if _n == _N
 bysort child_id start_period: gen period_size = _N 
 bysort child_id: egen mean_period_size = mean(period_size)
-drop if mean_period_size > 2 // drop 3% of shippers
-by child_id: gen total_size=_N
-drop if total_size > 90 // drop 1% of shippers
+drop if mean_period_size > 1.5 
+by child_id: gen total_size = _N
+// drop if number_of_shipments >= 10
+drop if total_size > 100 
+replace chargeable_weight = VOLUME_CBM/6
+replace chargeable_weight = WEIGHT_KG if chargeable_weight < WEIGHT_KG
+drop if chargeable_weight > 100000
+
+bysort child_id start_period: gen ship_this_period = 1 if _n==1
+by child_id: egen total_period = sum(ship_this_period)
+drop if total_period <= 20 | total_period > 80
+bysort child_id (start_period): gen pre_estimation_size = sum(ship_this_period) if start_period<=24
+gsort child_id -pre_estimation_size
+by child_id: replace pre_estimation_size = pre_estimation_size[1]
+drop if pre_estimation_size <= 5 | pre_estimation_size >=. 
+bysort child_id (start_period): gen post_estimation_size = sum(ship_this_period) if start_period>24
+gsort child_id -post_estimation_size
+by child_id: replace post_estimation_size = post_estimation_size[1]
+drop if post_estimation_size <= 15 | post_estimation_size >=. 
+drop ship_this_period
+
 bysort child_id FROM TO: gen route_size = _N
-bysort child_id start_period (route_size): keep if _n==_N 
-//keep 1 route per period; above drop 10% of child_id+start_period
-
-
+bysort child_id start_period (route_size): keep if _n == _N 
 sort child_id start_period complete_period FROM_LOCATION TO_LOCATION
 foreach i in FROM_LOCATION TO_LOCATION{
 	replace `i'=trim(`i')
@@ -1046,7 +1046,24 @@ replace TO = "IS-KEF" if TO == "IS-REK"
 bysort child_id FROM TO: gen route_id = 1 if _n==1
 by child_id: replace route_id = sum(route_id)
 by child_id: gen child_route_num = route_id[_N]
-drop if child_route_num > 10 | child_route_num == 1 //8% shippers
+drop if child_route_num > 10 | child_route_num == 1 
+
+// merge some small routes
+bysort child_id route_id: gen child_route_size = _N
+bysort child_id (child_route_size): gen max_per = child_route_size[_N]/total_period
+drop if max_per > 0.7
+bysort child_id: gen route_per = child_route_size/total_period
+bysort child_id (child_route_size): gen agg = 1 if route_per <= 0.05 | route_per[_n-1] <= 0.05
+by child_id child_route_size: replace agg = agg[_n-1] if _n>1
+by child_id: replace route_id = route_id[_n-1] if agg == 1 & _n>1
+bysort child_id route_id: gen route_id_2 = 1 if _n==1
+by child_id: replace route_id_2 = sum(route_id_2)
+drop route_id child_route_num child_route_size max_per route_per
+rename route_id_2 route_id
+bysort child_id (route_id): gen child_route_num = route_id[_N]
+drop if child_route_num == 1
+
+
 gen iata_place = substr(FROM, 4, 3)
 merge m:1 iata_place using airport
 keep if _merge == 3
@@ -1078,8 +1095,7 @@ drop IS_CARRIER_MUP SHIPMENT_DESCRIPTION_CODE C2K_ROUTE_MAP_HDR_ID COM_COUNTER /
 	ORIGIN_LOCATION change_route shipper_childcompany shipper_parentcompany ///
 	from_airport from_continent to_airport to_continent DELIVERY_LOCATION ///
 	SHIPMENT_TYPE start_week complete_week
-replace chargeable_weight = VOLUME_CBM/6
-replace chargeable_weight = WEIGHT_KG if chargeable_weight < WEIGHT_KG
+
 gen weight_break = "0-5"
 replace weight_break = "5-10" if chargeable_weight>5 & chargeable_weight<=10
 replace weight_break = "10-20" if chargeable_weight>10 & chargeable_weight<=20
@@ -1104,11 +1120,19 @@ replace weight_break = "3000-5000" if chargeable_weight>3000 & chargeable_weight
 replace weight_break = "5000-10000" if chargeable_weight>5000 & chargeable_weight<=10000
 replace weight_break = "10000+" if chargeable_weight>10000 & chargeable_weight<.
 gen month = mofd(dofc(start_time)-td(31dec2012)) + 1
-saveold map_inuse_child2.dta, version(12) replace
-
+sort child_id start_time
+drop if child_route_num >=7
+saveold map_inuse_child2.dta, version(12) replace 
 
 //%%%%%%%%%%%%%%%%%%%%%%%%% Route ID for each Shipper %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 /*
+bysort child_id complete_period: egen complete_shipvlm = sum(VOLUME)
+gen complete_log_shipvlm = log(1+complete_shipvlm) 
+by child_id complete_period: egen complete_shippkg = sum(PACKAGE)
+by child_id complete_period: egen complete_shipwgt = sum(WEIGHT)
+foreach i in delay early{
+  by child_id complete_period: egen ttl_`i' = sum(`i')
+}
 foreach i in delay early{
 	bysort child_id (complete_week): gen sofar_ttl_`i' = sum(ttl_`i')
 }
@@ -1766,22 +1790,20 @@ use IATA_lane_rate, clear
 append using worldfreightrates.dta
 append using worldfreightrates2.dta
 compress
+drop if weight_other_charges <= 0 
 saveold shipping_price.dta, version(11) replace
 xi: reg weight_other_charges_usd distance i.weight_break##c.chargeable_weight ///
     i.number_of_shipments  i.from_country i.to_country i.month
 
 //&&&&&&&&&&&&&&&&&&&&& Fill in Route for Missing Periods &&&&&&&&&&&&&&&&&&&&&&&&&&
 use map_inuse_child2.dta, clear
-drop child_id child_route_num route_id
+drop child_id
 egen child_id=group(shipper_merge_child)
-bysort child_id FROM TO: gen route_id = 1 if _n==1
-by child_id: replace route_id = sum(route_id)
-by child_id: gen child_route_num = route_id[_N]
-drop if child_route_num == 1
 
 drop PACKAGES WEIGHT_KG VOLUME_CBM DELIVERY_TERM new_shipper shipper_merge_parent ///
     shipper_mp_size total_period period_size mean_period_size total_size ///
-	route_size KN_COM_REF start_time final_time FROM TO new_consignee shipper_merge_child
+	route_size KN_COM_REF start_time final_time FROM TO new_consignee shipper_merge_child ///
+	total_period pre_esti post_esti agg route_size CARRIER
 xtset child_id start_period
 tsfill, full
 gen start_day = td(01jan2013) + 3*(start_period-1)
@@ -1792,13 +1814,15 @@ drop start_day
 replace from_country = "GE" if from_country == "AZ"
 replace from_country = "TH" if from_country == "VN"
 replace to_country = "PH" if to_country == "PW"
-forval x = 1/10 {
-	bysort child_id route_id: gen to_country_`x' = to_country if route_id==`x'
-	bysort child_id route_id: gen distance_`x' = distance if route_id==`x'
+forval x = 1/6 {
+	bysort child_id route_id (to_country): gen to_country_`x' = to_country ///
+	    if route_id==`x' & _n==_N
+	by child_id route_id (to_country): gen distance_`x' = distance ///
+	    if route_id==`x' & _n==_N
 	bysort child_id (to_country_`x'): replace to_country_`x' = to_country_`x'[_N]
 	bysort child_id (distance_`x'): replace distance_`x' = distance_`x'[1]
 }
-drop from_country to_country distance
+drop from_country to_country
 gen ship = 1 if route_id < .
 replace ship = 0 if ship!=1
 bysort child_id: egen m_weight = median(chargeable_weight)
@@ -1832,28 +1856,34 @@ replace weight_break = "10000+" if chargeable_weight>10000 & chargeable_weight<.
 saveold map_inuse_child3.dta, version(12) replace
 
 use map_inuse_child3.dta, clear
-keep delay early early start_period complete_period child_id route_id child_route_num
-keep if complete_period<.
+drop if ship == 0 
+keep delay early early start_period complete_period child_id route_id ///
+    child_route_num distance
 replace delay = delay-early
 drop early
-forval i = 1/7{
+drop if complete_period > 103
+/* forval i = 1/7{
     bysort child_id complete_period: gen delay_`i' = delay if _n==`i'
 	bysort child_id complete_period: gen route_`i' = route_id if _n==`i'
-	bysort child_id (delay_`i'): replace delay_`i' = delay_`i'[1]
-	bysort child_id (route_`i'): replace route_`i' = route_`i'[1]
+	bysort child_id complete_period (delay_`i'): replace delay_`i' = delay_`i'[1]
+	bysort child_id complete_period (route_`i'): replace route_`i' = route_`i'[1]
 }
 drop delay route_id
 bysort child_id complete_period: keep if _n==_N
 xtset child_id complete_period
 tsfill, full
 gen complete = 1 if child_route_num<.
-replace complete = 0 if complete>=.
+replace complete = 0 if complete>=. */
 drop start_period child_route_num
-order child_id complete_period 
+/* order child_id complete_period route_1 delay_1 route_2 delay_2 route_3 ///
+    delay_3 route_4 delay_4 route_5 delay_5 route_6 delay_6 route_7 delay_7 complete */
+sort child_id complete_period route_id distance
+order child_id complete_period route_id delay
 saveold Exp_mat.dta, version(12) replace
 outsheet using "Exp_mat.csv", comma replace
 
 use map_inuse_child3.dta, clear
+drop distance
 keep child_id child_route_num
 keep if child_route_num<.
 bysort child_id: keep if _n==1
