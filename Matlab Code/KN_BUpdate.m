@@ -12,6 +12,13 @@ function [MExp_mat, ...
                                     MExp_mat_95, ...
                                     VExp_mat_95)
 % Note from Andres: need to make sure the samplers are converged
+%% Learning Parameters
+% service quality: y=(actual-planned)/planned shipping duration
+%     ~ N(categ_pred+alpha*conti_pred, phi), mu_ir is one of the
+%     categorical predictor (currently only consider one categorial
+%     predictor)
+% where y ~ N(mu_ir, phi), mu_ir ~ N(nu_i, nu_phi), phi ~ G(a, b), nu_i ~ N(zeta, kappa)
+% nu_i is the hyperparameter, alpha ~ N(alpha_mu, alpha_phi)
 %% Parameter initialization
 ID = unique(Complete_mat(Complete_mat(:, 2)==T_index(1), 1));
 LL = 0;DIC = 0;

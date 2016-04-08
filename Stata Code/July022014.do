@@ -1890,3 +1890,34 @@ bysort child_id: keep if _n==1
 drop child_id
 outsheet using "Child_Route_Num.csv", replace
 
+use map_inuse_child3.dta, clear
+drop if ship == 0 
+keep delay early early complete_period child_id route_id distance
+replace delay = delay-early
+drop early
+drop if complete_period > 103
+bysort child_id complete_period route_id: egen ave_delay = mean(delay)
+bysort child_id complete_period route_id: keep if _n==1
+forval i = 1/6{
+    bysort child_id complete_period: gen delay_`i' = ave_delay if route_id==`i'
+	bysort child_id complete_period (delay_`i'): replace delay_`i' = delay_`i'[1]
+}
+bysort child_id complete_period: keep if _n==1
+drop route_id distance delay
+xtset child_id complete_period
+tsfill, full
+forval i = 1/6{
+    replace delay_`i' = delay_`i'[_n-1] if child_id==child_id[_n-1] & delay_`i'>=. & _n>1 & delay_`i'[_n-1]<.
+}
+drop child_id complete_period ave
+outsheet using "Exp_mat_fill.csv", comma replace
+
+use map_inuse_child3.dta, clear
+sort child_id start_period
+keep chargeable_weight start_period
+gen Q3 = 1 if start_period > 50 & start_period <= 75
+gen Q4 = 1 if start_period > 75
+replace Q3 = 0 if Q3 >=.
+replace Q4 = 0 if Q4 >=.
+drop start_period
+outsheet using "Utility_Pred.csv", comma replace

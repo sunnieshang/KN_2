@@ -6,7 +6,6 @@ load Learning_Hier.mat;
 pred_num = 1; 
 serq_num = 1;
 nfixed = pred_num + serq_num + sum(Vip_route) - nvip + 1; % beta (vip*k); gamma (veggie)
-RMExp_mat = MExp_mat(:, 1:end-1);
 fixed0 = 0.2 * ones(nfixed, 1); 
 % fixed0 = par_fixed;
 % fixed0(1:2) = beta_mu';
@@ -16,7 +15,7 @@ f_fixed = @(x)KN_HomoLLH(x,...
                          Start_mat,...
                          pred_num,...
                          serq_num,...
-                         Vip_route, logP_mat, RMExp_mat);
+                         Vip_route, logP_mat, MExp_mat(:, 1:route_max));
 % if check derivative, use "central finite difference", more accurate than
 % the default forward finite deifference". 
 % The estimation finished in around 30 minutes for 9 customers in 180
@@ -40,7 +39,7 @@ for i = 1: nvip
     index = index + Vip_route(i) - 1; 
 end
 fixed0 = par_fixed;
-save Homo_Result.mat
+save Learning_Hier_Result.mat
 
 %% Heterogeneous Parameters Estimation
 %% Create draws to be used in estimation

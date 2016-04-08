@@ -1,46 +1,46 @@
-clc; clearvars; rng('shuffle'); 
-T = 80; 
-nvip = 50; 
-route_min = 2; 
-route_max = 6;
-pred_num = 1; 
-serq_num = 1; % service quality predictor 
-n_continuous = 0;
-vip_route = datasample(route_min: route_max, nvip)';
-vip_route_rate = zeros(nvip, route_max);
-for i = 1: nvip
-    vip_route_rate(i, 1: vip_route(i)) = drchrnd(ones(1, vip_route(i)), 1);
-end
-%% NOTE from Andres
-% Look at the data and find the customers having more than 1 route demand
-% in one period. Another option: a predefined number of shipments in every
-% period, which is customer specific.
-%%  Meaning                 
-% 1.  T: # of time windows in the year 2013
-% 2.  nvip: # of shipping customers 
-% 3.  route_min, route_max: the lower/upper bound of the frequent routes of
-%         each customer. I limit the upper bound using route_max.
-% 4.  vip_route: nvip*1 vector, recording the # of frequent routes of each
-%         vip
-% 5.  pred_num: number of normal predictors
-% 6.  serq_num: number of service quality predictors 
-% 7.  Parameters (gamma, lambda, delta, beta, mu, phi, nu, a, b, zeta,
-%         kappa, gamma_mu etc.) are explained in the next section
-% 8.  prior_mat:1: zeta (level 2, high); 2, kappa (level 2); 3, phi_a; 
-%         4, phi_b; 5, nu_phi (level 1, low); 6: alpha_mu=0; 7: alpha_phi. 
-% 9.  Exp_mat: this is the expectation matrix, including statistics to be
-%         used in the indirect utility function. The content of this matrix
-%         can be changed according to model specification (which metrics to 
-%         be used in the indirect utility function, only mean or mean+var or 
-%         mean+sd etc. Current, the size is nvip*(route_max+1) where 
-%         nvip*route_max are the mu_i, and nvip*1 is the std
-% 10. ID_mat: 1, vip id; 2, period (1 to T, the same for everyone); 
-%         3, route index; 4, price; 5, real experience; 6, expected 
-%         experience; 7, shipped or not  
-% 11. U_mat: utility matrix 1. V; 2, EV; 3, EV/(1+EV);
-%         4, lambda*EV/(1+EV)
+clc; clearvars; rng('shuffle');
+load Learning_Hier.mat % P_mat and Pred_mat (Complete_mat) are scaled by 1000, 4000 
+Vip_route_rate = zeros(nvip, route_max);
+clear MExp_mat_95 VExp_mat_95 NPrior_mat NPrior_mat1 ...
+    T_index DIC LL i nDIC nLL Prior_mat t n_continuous Complete_mat
+Complete_mat_fill = csvread('Exp_mat_fill.csv', 1, 0); % direct memory from past experiences
+Utility_Pred = csvread('Utility_Pred.csv', 1, 0); % chargeable weight, Q3, Q4
 
+%% Sample Customer for Shorter Computation Time
+nvip = 200; %can adjust this sample value
+Vip_route = Vip_route(1: nvip);
+Start_mat = Start_mat(1: nvip*T, :);
+%% The follows are used as predictors, normalize
+P_mat = (P_mat(1: nvip*T, :) - 1)/5;
+logP_mat = (logP_mat(1: nvip*T, :)-5.5)/1.4;
+Pred_mat = (Pred_mat(1: nvip*T, :)-2)/0.9;
+MExp_mat = MExp_mat(1: nvip*T, :)/2; 
+VExp_mat = VExp_mat(1: nvip*T, :);
+VExp_mat(:, 1) = (VExp_mat(:, 1) - 0.7)/2.1;
+Complete_mat_fill = Complete_mat_fill(1: nvip*T, :)/2.8;
+Utility_Pred = Utility_Pred(1: nvip*T, :);
+Utility_Pred(:, 1) = (Utility_Pred(:, 1) - 800)/3000;
+
+%% For all the matrix, need to use the post_sample
+index = T_pre+1:T;
+for i = 1: nvip-1
+    index = [index, T*i+(T_pre+1:T)];
+end
+P_mat = P_mat(index,:);
+logP_mat = logP_mat(index,:);
+Pred_mat = Pred_mat(index,:);
+MExp_mat = MExp_mat(index,:); 
+VExp_mat = VExp_mat(index,:);
+Complete_mat_fill = Complete_mat_fill(index,:);
+Utility_Pred = Utility_Pred(index,:);
+Start_mat = Start_mat(index, :);
+Start_mat(:, 2) = Start_mat(:, 2) - T_pre;
+T = T - T_pre;
+clear i index T_pre;
 %% Parameter and Model Specification
+% Start_mat: 1, child_id; 2, start period; 3, route_id; 4, logP; 5, ship or
+% not
+% U_mat: utility matrix 1. V; 2, EV; 3, EV/(1+EV); 4, lambda*EV/(1+EV)
 % EU = gamma + beta*data_predictor
 % gamma ~ N(gamma_mu, gamma_sigma)
 % Not Userd Currently: lambda = exp(delta)/(1+exp(delta))----->delta ~ N(delta_mu, delta_sigma)
@@ -52,90 +52,144 @@ end
 % beta  ~ N(beta_mu, beta_sigma)
 % Indirect Utiltiy = beta_1*pred_1 + 
 %     beta_2*E(service_quality|route r, customer i)
-% service quality: y=(actual-planned)/planned shipping duration
-%     ~ N(categ_pred+alpha*conti_pred, phi), mu_ir is one of the
-%     categorical predictor (currently only consider one categorial
-%     predictor)
-% where mu_ir ~ N(nu_i, nu_phi), phi ~ G(a, b), nu_i ~ N(zeta, kappa)
-% nu_i is the hyperparameter, alpha ~ N(alpha_mu, alpha_phi)
 
-%% Bayesian parameter update flow
-% 1. When t=1:
-%     1.1 Let E(service quality) = Exp_mat
-%     1.2 Arrival rate AR= lambda * e(U)/(1+e(U)), where
-%         U = beta_1*pred_1+beta_2*E(service quality)
-% TODO: 1.3 is not realized yet, need to discuss with Andres about it
-%     1.3 Calcuate the arrival gap for each customer, gap~exp(AR)
-%     1.4 Update the arrival matrix
-% 2. When t>1: 
-%     2.1 Update E(service quality) by using the real shipping quality from
-%         the last time.
-%     2.(2,3,4) are the same as 1.(2,3,4)
+%% Generate service matrics
+Q_mat(:,:,1) = MExp_mat(:, 1:route_max);
+Q_mat_risk(:,:,1) = MExp_mat(:, 1:route_max);
+Q_mat_risk(:,:,2) = repmat(VExp_mat(:, 1), 1, route_max);
 
+Q_mat_asy(:,:,1) = MExp_mat(:, 1:route_max).*(MExp_mat(:, 1:route_max)>=0);
+Q_mat_asy(:,:,2) = MExp_mat(:, 1:route_max).*(MExp_mat(:, 1:route_max)<0);
+
+Q_mat_asy_risk(:,:,1) = MExp_mat(:, 1:route_max).*(MExp_mat(:, 1:route_max)>=0);
+Q_mat_asy_risk(:,:,2) = MExp_mat(:, 1:route_max).*(MExp_mat(:, 1:route_max)<0);
+Q_mat_asy_risk(:,:,3) = repmat(VExp_mat(:, 1), 1, route_max);
+
+Q_mat_null = Complete_mat_fill;
+
+%% Generate other predictors X, the same for all the customers
+X(:, :, 1) = logP_mat;
+%X(:, :, 2) = Pred_mat; % distance
+X(:, :, 2) = repmat(Utility_Pred(:,1), 1, route_max); % weight
+X(:, :, 3) = repmat(Utility_Pred(:,2), 1, route_max); % Q3
+X(:, :, 4) = repmat(Utility_Pred(:,3), 1, route_max); % Q4
+% have tested the potential correlation between price, distance and weight
+% A = [Utility_Pred(:, 1), logP_mat(:, 1), P_mat(:, 1), Pred_mat(:, 1)]; corrcoef(A)
+X = cat(3, Q_mat, X, ones(size(Q_mat,1),size(Q_mat,2),1));
 %% Simulate parameters
-% Note: gamma cannot vary too much, beta can!!!
-% gamma_mu    = normrnd(0.5, 1, [1, 1]);
-gamma_mu    = - 1.2; 
-% gamma_mu = 0; 
-gamma_sigma = 0.3; 
-% gamma_sigma = 0;
-gamma       = normrnd(repmat(gamma_mu', nvip, 1), ...
-                      gamma_sigma, ...
-                      [nvip, 1]);
-% delta_mu    = normrnd(0.3, 0.1, [1, 1]);
-% delta_sigma = 0.1;
-% delta       = normrnd(repmat(delta_mu', nvip, 1), ...
-%                       delta_sigma, ...
-%                       [nvip, 1]);
-% lambda      = exp(delta) ./ (1 + exp(delta));
-% lambda = ones(nvip, 1); 
-
-beta_mu     = [-0.4; -0.25]; 
-beta_sigma  = [0.1; 0];
-% beta_sigma  = [0; 0];
-beta        = normrnd(repmat(beta_mu', nvip, 1), ...
-                      repmat(beta_sigma', nvip, 1), ...
-                      [nvip, pred_num + serq_num]); 
-
 % NOTE 1: should scall all X var to have mean 0 and std 1
 % Note 2: check rcond: <1e-16 is a sig problem: drop or combine var
-prior_mat   = KN_Prior(n_continuous, nvip);
-% Exp_mat is the expectation matrix used into utitlity function for decision
-% making
-[MExp_mat, VExp_mat] = KN_Exp(prior_mat, n_continuous, route_max);
-[ID_mat, P_mat, S_mat] = KN_ID(vip_route_rate, T, vip_route);
-U_mat       = zeros(nvip, 4);
-T_index     = (0: T: T*(nvip-1))';
-
-%% predictors updates by period
-for t = 1:T
-%     Make decision based on current info
-    T_index     = T_index + 1;
-    IndU = KN_IndUtility(T_index, gamma, beta, MExp_mat, P_mat, vip_route);
-    U_mat(:, 1) = IndU(...
-        sub2ind(size(IndU), (1: 1: nvip)', ID_mat(T_index, 3)));
-    U_mat(:, 2) = exp(U_mat(:, 1));
-    U_mat(:, 3) = U_mat(:, 2)./(U_mat(:, 2) + 1);
-%     U_mat(:, 4) = lambda .* U_mat(:, 3);
-    U_mat(:, 4) = U_mat(:, 3);
-    ID_mat(T_index, 7) = binornd(1, U_mat(:, 4));  
-    ID_mat(T_index, 6) = ...
-        MExp_mat(sub2ind(size(MExp_mat), 1:nvip,ID_mat(T_index, 3)'))'; 
-%     Update believes after real experiences
-    [MExp_mat, VExp_mat] = KN_BUpdate(T_index, ID_mat, prior_mat, ...
-        MExp_mat, VExp_mat, vip_route);  
+for i = 1: nvip
+    Vip_route_rate(i, 1: Vip_route(i)) = sort(drchrnd(ones(1, Vip_route(i)), 1), 'descend');
+    
 end
-clear i;
-
-T_index = (1: T: T*(nvip-1)+1)';
-RMExp_mat = zeros(nvip*T, route_max); % real mean expectation mat
-RVExp_mat = zeros(nvip*T, 1); % real variance expectation mat
-[RMExp_mat(T_index, :), RVExp_mat(T_index, :)] = KN_Exp(prior_mat, n_continuous, route_max);
-for t = 1:T-1
-    [RMExp_mat(T_index+1, :), RVExp_mat(T_index+1, :)] = ...
-        KN_BUpdate(T_index, ID_mat, prior_mat, ...
-        RMExp_mat(T_index, :), RVExp_mat(T_index, :), vip_route);
-    T_index = T_index + 1;
+% Note: gamma cannot vary too much, beta can!!!
+hete_num = 1; 
+homo_num = size(X, 3) - hete_num; 
+pred_num = hete_num + homo_num;
+beta_mu     = -0.5*ones(1,pred_num);
+beta_sigma  = [0.2, zeros(1, pred_num-1)]; 
+beta        = normrnd(repmat(beta_mu, nvip, 1), ...
+                      repmat(beta_sigma, nvip, 1), ...
+                      [nvip, hete_num + homo_num]); 
+T_index     = 1:T:1+(nvip-1)*T;
+SStart_mat = Start_mat; % simulated Start_mat
+for i=1:nvip
+    SStart_mat((i-1)*T+1: i*T, 3) = sum(mnrnd(ones(T, 1), Vip_route_rate(i, :)) ...
+        .* repmat(1: route_max, T, 1), 2);
 end
-save data_0113.mat; 
+
+%% Simulate Purchase Choices
+IndU = KN_IndUtility(1:T*nvip, beta, X, Vip_route);
+IndU = exp(IndU); 
+IndU = IndU ./ (1 + IndU);
+Prob = IndU(sub2ind(size(IndU), (1:nvip*T)', SStart_mat(:, 3))); 
+SStart_mat(:, 5) = binornd(1, Prob);
+
+%% Estimation Homogeneous
+nfixed = pred_num + sum(Vip_route) - nvip; % beta (vip*k); gamma (veggie)
+fixed0 = rand(nfixed, 1); 
+f_fixed = @(x)KN_HomoLLH(x,...
+                         SStart_mat,...
+                         pred_num,...
+                         Vip_route, ...
+                         X);
+% if check derivative, use "central finite difference", more accurate than
+% the default forward finite deifference". 
+% The estimation finished in around 30 minutes for 9 customers in 180
+% periods and 22% of positive period (sum(Start_mat(:,7))/size(Start_mat, 1))
+ops_fixed = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
+        'DerivativeCheck', 'off', 'GradObj', 'on', 'Display', 'iter', ...
+        'TolX', 1e-9, 'TolFun', 1e-9, 'MaxIter', 1000, ...
+        'MaxFunEvals', 1e10, 'FinDiffType', 'forward', 'MaxIter', 100);
+[par_fixed, fval_fixed, exitflag_fixed, output, grad, hess] = ...
+    fminunc(f_fixed, fixed0, ops_fixed);
+fixed_SE = sqrt(diag(inv(hess)));
+fixed_beta  = par_fixed(1: pred_num);
+index = pred_num + 1;
+fixed_rate = zeros(nvip, route_max);
+figure;
+for i = 1: nvip
+    fixed_rate(i, 1) = 1/ ...
+        (1 + sum(exp(par_fixed(index: (index+Vip_route(i)-2)))));
+    fixed_rate(i, 2: Vip_route(i)) = exp(par_fixed(index:index+Vip_route(i)-2)) ...
+        ./ (1 + sum(exp(par_fixed(index: (index+Vip_route(i)-2)))));
+    index = index + Vip_route(i) - 1; 
+    hold on;
+    scatter(fixed_rate(i, :), Vip_route_rate(i, :));
+end
+figure(2);
+scatter(fixed_beta, beta_mu);
+fixed_rate(:, route_max+1) = max(fixed_rate, [], 2);
+fixed_rate(fixed_rate==0)=1;
+fixed_rate(:, route_max+2) = min(fixed_rate, [], 2);
+mean(fixed_rate(:, end-1: end))
+quantile(fixed_rate(:, end-1: end), [0.05, 0.95])
+% fixed0 = par_fixed;
+% save Estimate_Hier.mat
+
+%% Heterogeneous Parameters Estimation
+%% Create draws to be used in estimation
+% let's follow STATA in using 50 Halton draws per consumer for primes 2 and 3, dropping the first 15 (burn) 
+ndraws = 50;
+haltondraws = haltonset(hete_num, 'Skip', 15);
+haltondraws = scramble(haltondraws, 'RR2'); 
+draws = zeros(nvip, hete_num, ndraws);
+for i=1: hete_num
+     draws(:, i, :) = reshape(norminv(haltondraws(1: nvip*ndraws, i), 0, 1), ...
+         nvip, ndraws);
+end
+
+%% Recover/Estimate random coefficient
+nrandom = nfixed + hete_num; % plus STD for each beta and gamma
+random0 = [par_fixed; -0.2 * ones(hete_num, 1)];
+f_random = @(x)KN_HeteLLH(x, SStart_mat, pred_num, hete_num, ...
+    Vip_route, X, draws);
+ops_random = optimoptions(@fminunc, 'Algorithm', 'trust-region',...
+    'DerivativeCheck', 'off', 'GradObj', 'on', ...
+    'Display', 'iter', 'TolX', 1e-9,'TolFun', 1e-9, 'MaxIter', 100,...
+    'MaxFunEvals', 1e10, 'FinDiffType', 'forward');
+[par_random, fval_random, exitflag_random, output_random, grad_random, hess_random]...
+    = fminunc(f_random, random0, ops_random);
+rSE = sqrt(diag(inv(hess_random)));
+
+rbeta_mu = par_random(1: pred_num); 
+rbeta_sigma = exp(par_random(end - (hete_num) + 1 : end));
+rrate = zeros(nvip, route_max);
+figure(3)
+index = pred_num + 1; 
+for i = 1: nvip
+    rrate(i, 1) = 1/ ...
+        (1 + sum(exp(par_random(index: (index+Vip_route(i)-2)))));
+    rrate(i, 2: Vip_route(i)) = exp(par_random(index: index+Vip_route(i) - 2)) ...
+        ./ (1 + sum(exp(par_random(index: (index + Vip_route(i)-2)))));
+    index = index + Vip_route(i) - 1; 
+    hold on;
+    scatter(rrate(i, :), Vip_route_rate(i, :));
+end
+figure(4);
+scatter(beta_mu, rbeta_mu);
+figure(5);
+scatter(beta_sigma(1:hete_num), rbeta_sigma);
+random0 = par_random;
 
