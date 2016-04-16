@@ -1913,11 +1913,80 @@ drop child_id complete_period ave
 outsheet using "Exp_mat_fill.csv", comma replace
 
 use map_inuse_child3.dta, clear
-sort child_id start_period
-keep chargeable_weight start_period
+sort child_id start_period 
+bysort child_id: replace ship = sum(ship)
+keep chargeable_weight start_period ship
 gen Q3 = 1 if start_period > 50 & start_period <= 75
 gen Q4 = 1 if start_period > 75
 replace Q3 = 0 if Q3 >=.
 replace Q4 = 0 if Q4 >=.
 drop start_period
 outsheet using "Utility_Pred.csv", comma replace
+
+use map_inuse_child3.dta, clear
+sort child_id start_period 
+bysort child_id: replace ship = sum(ship) if start_period<=24
+replace ship = ship[_n-1] if _n>1 & child_id==child_id[_n-1] & start_period>=25
+keep chargeable_weight start_period ship
+forval i = 1/9 {
+    gen Q`i' = 1 if start_period>`i'*10 & start_period <=(`i'+1)*10
+	replace Q`i' = 0 if Q`i' >=.
+}
+replace Q9 = 1 if start_period >=100
+drop start_period
+outsheet using "Utility_Pred2.csv", comma replace
+
+// Exploratory Analysis
+use map_inuse_child2.dta, clear
+drop child_id
+egen child_id=group(shipper_merge_child)
+drop PACKAGES WEIGHT_KG VOLUME_CBM DELIVERY_TERM new_shipper shipper_merge_parent ///
+    shipper_mp_size total_period period_size mean_period_size total_size ///
+	route_size KN_COM_REF start_time final_time FROM TO new_consignee shipper_merge_child ///
+	total_period pre_esti post_esti agg route_size CARRIER
+xtset child_id start_period
+tsfill, full
+gen start_day = td(01jan2013) + 3*(start_period-1)
+format start_day %td
+replace month = mofd(start_day-td(01jan2013)) + 1 
+drop start_day
+replace delay = delay - early
+drop early
+gen delay1 = delay if route_id==1
+replace delay1 = 0 if delay1 >=.
+gen delay0 = delay if route_id!=1
+replace delay0 = 0 if delay0 >=.
+gen num1 = 1 if route_id == 1
+replace num1 = 0 if num1 >=.
+gen num0 = 1 if route_id != 1 & route_id <.
+replace num0 = 0 if num0 >=.
+bysort child_id (start_period): replace num1 = sum(num1)
+bysort child_id (start_period): replace num0 = sum(num0)
+bysort child_id (start_period): replace delay1 = sum(delay1)
+bysort child_id (start_period): replace delay0 = sum(delay0)
+gen num25 = num1 + num0 if start_period==25
+by child_id (start_period): replace num25 = num25[_n-1] if start_period>25
+drop if start_period<25
+gen shop = 1 if distance<.
+replace shop = 0 if shop >=.
+replace delay1 = delay1/num1
+replace delay0 = delay0/num0
+gen delay1p = delay1 if delay1>=0
+gen delay1n = delay1 if delay1<0 
+replace delay1p = 0 if delay1p>=.
+replace delay1n = 0 if delay1n>=.
+
+gen delay0p = delay0 if delay0>=0
+gen delay0n = delay0 if delay0<0 
+replace delay0p = 0 if delay0p>=.
+replace delay0n = 0 if delay0n>=.
+
+gen delay1p2 = delay1p^2
+gen delay1n2 = delay1n^2
+gen delay0p2 = delay0p^2
+gen delay0n2 = delay0n^2
+replace delay1 = -delay1
+replace delay0 = -delay0
+logistic shop l1.delay1 l1.delay0 ///
+ i.start_period i.child_id
+

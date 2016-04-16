@@ -123,8 +123,8 @@ if ~isempty(ID)
         mid_exp_95(1: 2*Vip_route(ID(i))) = mid;
         PMExp_mat_95(i, :) = mid_exp_95; 
         
-
-        mid = mean(phi(burnin: iter, :), 1);
+        mid = [phi, n_kappa];
+        mid = mean(mid(burnin: iter, :), 1);
         PVExp_mat(i,:) = mid;       
         mid = quantile(phi(burnin: iter, :), [0.05, 0.95]);
         mid = reshape(mid, 1, size(mid,1)*size(mid,2));

@@ -1,15 +1,15 @@
 clc; clearvars; rng('shuffle'); 
 %% Read In Date
-Complete_mat = csvread('Exp_mat.csv', 1, 0);
+Complete_mat = csvread('Exp_mat_tocountry.csv', 1, 0);
 % 1, child_id; 2, complete_period; 3, route_1; 4, delay_1; 
 % 5, route_2; 6, delay_2; 7, r_3; 8, d_3, 9, r_4, 10, d_4, 11, r_5, 12, d_5, 
 % 13, r_6; 14, d_6,15, r_7; 16, d_7; 17, complete or not
-Vip_route = csvread('Child_Route_Num.csv', 1, 0)'; % nvip * 1
-P_mat = csvread('P_mat.csv'); 
-logP_mat = csvread('logP_mat.csv');
-Start_mat = csvread('ID_mat.csv'); 
+Vip_route = csvread('Child_Route_Num_tocountry.csv', 1, 0)'; % nvip * 1
+P_mat = csvread('P_mat_tocountry.csv'); 
+logP_mat = csvread('logP_mat_tocountry.csv');
+Start_mat = csvread('ID_mat_tocountry.csv'); 
 % Start_mat: 1, child_id; 2, start period; 3, route_id; 4, ship or not
-Pred_mat = csvread('Predictor.csv');
+Pred_mat = csvread('Predictor_tocountry.csv');
 Start_mat(:, 5) = Start_mat(:, 4);
 Start_mat(Start_mat(:, 3)==0, 3) = 1;
 Start_mat(:, 4) = logP_mat(sub2ind(size(P_mat), (1:1:size(Start_mat,1))', Start_mat(:, 3))); 
@@ -34,14 +34,14 @@ P_mat = P_mat/1000;
 T_pre = 24;
 nvip = size(P_mat, 1)/T;
 route_min = 2; 
-route_max = 6;
+route_max = 4;
 n_continuous = 1;
 Prior_mat   = KN_Prior_Ind(route_max, nvip);
 NPrior_mat = Prior_mat;
 T_index = (1: T: T*(nvip-1)+1)';
 MExp_mat = zeros(nvip*T, route_max); % mean experience mat
 MExp_mat_95 = zeros(nvip*T, 2*route_max); % 95% confidence interval
-VExp_mat = zeros(nvip*T, 1); % variance experience mat (phi and nu_phi, sigma and xi in the paper)
+VExp_mat = zeros(nvip*T, 1 + route_max); % variance experience mat 
 VExp_mat_95 = zeros(nvip*T, 2); % 95% confidence interval
 VExp_mat(T_index, :) = 1/30^2;
 %% Pre-estimation to Update the Priors for each customer
@@ -84,4 +84,4 @@ for t = T_pre+1: T-1
     LL = LL + nLL; DIC = DIC + nDIC;
     T_index = T_index + 1;
 end
-save Learning_Ind.mat
+save Learning_Ind_tocountry.mat
